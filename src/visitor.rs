@@ -421,35 +421,51 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
             .config
             .file_lines()
             .contains_line(&file_name, brace_line);
-        let split_brace_idx = pre_block_snippet.rfind('\n');
+        let pre_block_fully_selected = self
+            .config
+            .file_lines()
+            .contains_range(&file_name, decl_line, brace_line);
+        let only_whitespace_after_decl = pre_block_snippet
+            .split('\n')
+            .skip(1)
+            .all(|line| line.trim().is_empty());
 
         if let Some((fn_str, fn_brace_style)) = rewrite {
-            // When the opening brace is on its own line, preserve that boundary unless the
-            // selected range explicitly includes both the function declaration and brace line.
-            match (decl_selected, brace_selected, split_brace_idx) {
-                (false, false, _) => {
-                    self.format_missing_with_indent(fn_span.lo());
-                    self.push_str(pre_block_snippet);
-                    self.last_pos = block_span.lo();
-                    self.visit_block(block, inner_attrs, true);
-                    return;
+            // If the brace is already on its own line and the intervening lines are only
+            // whitespace, preserve the unselected portion of that gap and only normalize the
+            // selected lines. This avoids pulling the brace up to the signature when the normal
+            // rewrite path would reapply brace style to the whole pre-block region.
+            if brace_line > decl_line && only_whitespace_after_decl && !pre_block_fully_selected {
+                let mut rebuilt = String::new();
+                for (line_offset, chunk) in pre_block_snippet.split_inclusive('\n').enumerate() {
+                    let line = decl_line + line_offset;
+                    if line == decl_line {
+                        if decl_selected {
+                            rebuilt.push_str(&fn_str);
+                            if chunk.ends_with('\n') {
+                                rebuilt.push('\n');
+                            }
+                        } else {
+                            rebuilt.push_str(chunk);
+                        }
+                    } else if line == brace_line {
+                        if !brace_selected {
+                            rebuilt.push_str(chunk);
+                        }
+                    } else if !self.config.file_lines().contains_line(&file_name, line) {
+                        rebuilt.push_str(chunk);
+                    }
                 }
-                (true, false, Some(idx)) => {
+
+                if decl_selected {
                     self.format_missing_with_indent(fn_span.lo());
-                    self.push_str(&fn_str);
-                    self.push_str(&pre_block_snippet[idx..]);
-                    self.last_pos = block_span.lo();
-                    self.visit_block(block, inner_attrs, true);
-                    return;
+                } else {
+                    self.format_missing(fn_span.lo());
                 }
-                (false, true, Some(idx)) => {
-                    self.format_missing_with_indent(fn_span.lo());
-                    self.push_str(&pre_block_snippet[..idx + 1]);
-                    self.last_pos = block_span.lo();
-                    self.visit_block(block, inner_attrs, true);
-                    return;
-                }
-                _ => {}
+                self.push_str(&rebuilt);
+                self.last_pos = block_span.lo();
+                self.visit_block(block, inner_attrs, true);
+                return;
             }
 
             self.format_missing_with_indent(source!(self, s).lo());
