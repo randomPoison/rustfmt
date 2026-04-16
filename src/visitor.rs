@@ -413,44 +413,43 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         let file_name = self.psess.span_to_filename(pre_block_span);
         let decl_line = self.psess.line_of_byte_pos(fn_span.lo());
         let brace_line = self.psess.line_of_byte_pos(block_span.lo());
-        let decl_selected = self.config.file_lines().contains_line(&file_name, decl_line);
-        let brace_selected = self.config.file_lines().contains_line(&file_name, brace_line);
-        let first_body_line_selected = block
-            .stmts
-            .first()
-            .map(|stmt| self.psess.line_of_byte_pos(source!(self, stmt.span).lo()))
-            .is_some_and(|line| self.config.file_lines().contains_line(&file_name, line));
+        let decl_selected = self
+            .config
+            .file_lines()
+            .contains_line(&file_name, decl_line);
+        let brace_selected = self
+            .config
+            .file_lines()
+            .contains_line(&file_name, brace_line);
         let split_brace_idx = pre_block_snippet.rfind('\n');
 
         if let Some((fn_str, fn_brace_style)) = rewrite {
             // When the opening brace is on its own line, preserve that boundary unless the
             // selected range explicitly includes both the function declaration and brace line.
-            if brace_line > decl_line && !(brace_selected && first_body_line_selected) {
-                match (decl_selected, brace_selected, split_brace_idx) {
-                    (false, false, _) => {
-                        self.format_missing_with_indent(fn_span.lo());
-                        self.push_str(pre_block_snippet);
-                        self.last_pos = block_span.lo();
-                        self.visit_block(block, inner_attrs, true);
-                        return;
-                    }
-                    (true, false, Some(idx)) => {
-                        self.format_missing_with_indent(fn_span.lo());
-                        self.push_str(&fn_str);
-                        self.push_str(&pre_block_snippet[idx..]);
-                        self.last_pos = block_span.lo();
-                        self.visit_block(block, inner_attrs, true);
-                        return;
-                    }
-                    (false, true, Some(idx)) => {
-                        self.format_missing_with_indent(fn_span.lo());
-                        self.push_str(&pre_block_snippet[..idx + 1]);
-                        self.last_pos = block_span.lo();
-                        self.visit_block(block, inner_attrs, true);
-                        return;
-                    }
-                    _ => {}
+            match (decl_selected, brace_selected, split_brace_idx) {
+                (false, false, _) => {
+                    self.format_missing_with_indent(fn_span.lo());
+                    self.push_str(pre_block_snippet);
+                    self.last_pos = block_span.lo();
+                    self.visit_block(block, inner_attrs, true);
+                    return;
                 }
+                (true, false, Some(idx)) => {
+                    self.format_missing_with_indent(fn_span.lo());
+                    self.push_str(&fn_str);
+                    self.push_str(&pre_block_snippet[idx..]);
+                    self.last_pos = block_span.lo();
+                    self.visit_block(block, inner_attrs, true);
+                    return;
+                }
+                (false, true, Some(idx)) => {
+                    self.format_missing_with_indent(fn_span.lo());
+                    self.push_str(&pre_block_snippet[..idx + 1]);
+                    self.last_pos = block_span.lo();
+                    self.visit_block(block, inner_attrs, true);
+                    return;
+                }
+                _ => {}
             }
 
             self.format_missing_with_indent(source!(self, s).lo());
