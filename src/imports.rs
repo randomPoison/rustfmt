@@ -1028,8 +1028,9 @@ fn rewrite_nested_use_tree(
             list_item.item = use_tree.rewrite_result(context, nested_shape);
             list_items.push(list_item);
         } else {
-            list_items.push(ListItem::from_str(
+            list_items.push(ListItem::from_str_with_span(
                 use_tree.rewrite_result(context, nested_shape)?,
+                use_tree.span(),
             ));
         }
     }
@@ -1059,14 +1060,20 @@ fn rewrite_nested_use_tree(
     } else {
         SeparatorTactic::Never
     };
-    let fmt = ListFormatting::new(nested_shape, context.config)
+    let list_span = use_tree_list
+        .first()
+        .zip(use_tree_list.last())
+        .map_or(DUMMY_SP, |(first, last)| {
+            mk_sp(first.span().lo(), last.span().hi())
+        });
+    let fmt = ListFormatting::new(nested_shape, context.config, list_span)
         .tactic(tactic)
         .trailing_separator(trailing_separator)
         .ends_with_newline(ends_with_newline)
         .preserve_newline(true)
         .nested(has_nested_list);
 
-    let list_str = write_list(&list_items, &fmt)?;
+    let list_str = write_list(context, &list_items, &fmt)?;
 
     let result = if (list_str.contains('\n')
         || list_str.len() > remaining_width

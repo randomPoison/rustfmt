@@ -14,6 +14,7 @@ use crate::comment::{
     FindUncommented, combine_strs_with_missing_comments, contains_comment, is_last_comment_block,
     recover_comment_removed, recover_missing_comment_in_span, rewrite_missing_comment,
 };
+use crate::config::file_lines::LineRange;
 use crate::config::lists::*;
 use crate::config::{BraceStyle, Config, IndentStyle, StyleEdition};
 use crate::expr::{
@@ -649,11 +650,11 @@ impl<'a> FmtVisitor<'a> {
         }
 
         let shape = self.shape().sub_width_opt(2)?;
-        let fmt = ListFormatting::new(shape, self.config)
+        let fmt = ListFormatting::new(shape, self.config, mk_sp(body_lo, body_hi))
             .trailing_separator(self.config.trailing_comma())
             .preserve_newline(true);
 
-        let list = write_list(&items, &fmt).ok()?;
+        let list = write_list(&self.get_context(), &items, &fmt).ok()?;
         result.push_str(&list);
         result.push_str(&original_offset.to_string_with_newline(self.config));
         result.push('}');
@@ -2525,13 +2526,6 @@ fn rewrite_fn_base(
     );
 
     result.push('(');
-    // Check if vertical layout was forced.
-    if one_line_budget == 0
-        && !snuggle_angle_bracket
-        && context.config.indent_style() == IndentStyle::Visual
-    {
-        result.push_str(&param_indent.to_string_with_newline(context.config));
-    }
 
     let params_end = if fd.inputs.is_empty() {
         context
@@ -2558,15 +2552,42 @@ fn rewrite_fn_base(
         fd.c_variadic(),
     )?;
 
+    // TODO: There might not be an params, in which case we can just use `param_span` probably ig
+    let pre_param_span = mk_sp(params_span.lo(), fd.inputs[0].span.lo());
+
     let put_params_in_block = match context.config.indent_style() {
         IndentStyle::Block => param_str.contains('\n') || param_str.len() > one_line_budget,
         _ => false,
-    } && !fd.inputs.is_empty();
+    } && !fd.inputs.is_empty(); // && !out_of_file_lines_range!(context, pre_param_span);
 
     let mut params_last_line_contains_comment = false;
     let mut no_params_and_over_max_width = false;
 
-    if put_params_in_block {
+    let pre_param_span_selected = context
+        .config
+        .file_lines()
+        .contains(&context.psess.lookup_line_range(pre_param_span));
+
+    // Check if vertical layout was forced.
+    if one_line_budget == 0
+        && !snuggle_angle_bracket
+        && context.config.indent_style() == IndentStyle::Visual
+
+        // TODO: Test this case to make sure we don't uh handle this incorrectly i guess
+        && pre_param_span_selected
+    {
+        result.push_str(&param_indent.to_string_with_newline(context.config));
+    }
+
+    dbg!(pre_param_span_selected);
+    if !pre_param_span_selected {
+        dbg!(context.snippet(pre_param_span));
+        // result.push_str(context.snippet(pre_param_span));
+        result.push_str(&param_str);
+
+        // TODO: what about span after params? does that matter?
+        result.push(')');
+    } else if put_params_in_block {
         param_indent = indent.block_indent(context.config);
         result.push_str(&param_indent.to_string_with_newline(context.config));
         result.push_str(&param_str);
@@ -2895,12 +2916,12 @@ fn rewrite_params(
             IndentStyle::Visual => SeparatorTactic::Never,
         }
     };
-    let fmt = ListFormatting::new(Shape::legacy(budget, indent), context.config)
+    let fmt = ListFormatting::new(Shape::legacy(budget, indent), context.config, span)
         .tactic(tactic)
         .trailing_separator(trailing_separator)
         .ends_with_newline(tactic.ends_with_newline(context.config.indent_style()))
         .preserve_newline(true);
-    write_list(&param_items, &fmt)
+    write_list(context, &param_items, &fmt)
 }
 
 fn compute_budgets_for_params(
@@ -3158,11 +3179,11 @@ fn rewrite_bounds_on_where_clause(
 
     let preserve_newline = context.config.style_edition() <= StyleEdition::Edition2021;
 
-    let fmt = ListFormatting::new(shape, context.config)
+    let fmt = ListFormatting::new(shape, context.config, mk_sp(span_start, span_end))
         .tactic(shape_tactic)
         .trailing_separator(comma_tactic)
         .preserve_newline(preserve_newline);
-    write_list(&items.collect::<Vec<_>>(), &fmt)
+    write_list(context, &items.collect::<Vec<_>>(), &fmt)
 }
 
 fn rewrite_where_clause(
@@ -3244,12 +3265,16 @@ fn rewrite_where_clause(
         comma_tactic = SeparatorTactic::Never;
     }
 
-    let fmt = ListFormatting::new(Shape::legacy(budget, offset), context.config)
-        .tactic(tactic)
-        .trailing_separator(comma_tactic)
-        .ends_with_newline(tactic.ends_with_newline(context.config.indent_style()))
-        .preserve_newline(true);
-    let preds_str = write_list(&item_vec, &fmt)?;
+    let fmt = ListFormatting::new(
+        Shape::legacy(budget, offset),
+        context.config,
+        mk_sp(span_start, span_end),
+    )
+    .tactic(tactic)
+    .trailing_separator(comma_tactic)
+    .ends_with_newline(tactic.ends_with_newline(context.config.indent_style()))
+    .preserve_newline(true);
+    let preds_str = write_list(context, &item_vec, &fmt)?;
 
     let end_length = if terminator == "{" {
         // If the brace is on the next line we don't need to count it otherwise it needs two

@@ -3,7 +3,7 @@
 use std::cmp;
 use std::iter::Peekable;
 
-use rustc_span::{BytePos, Span};
+use rustc_span::{BytePos, DUMMY_SP, Span};
 
 use crate::comment::{FindUncommented, find_comment_end, rewrite_comment};
 use crate::config::lists::*;
@@ -32,10 +32,12 @@ pub(crate) struct ListFormatting<'a> {
     // Whether comments should be visually aligned.
     align_comments: bool,
     config: &'a Config,
+
+    span: Span,
 }
 
 impl<'a> ListFormatting<'a> {
-    pub(crate) fn new(shape: Shape, config: &'a Config) -> Self {
+    pub(crate) fn new(shape: Shape, config: &'a Config, span: Span) -> Self {
         ListFormatting {
             tactic: DefinitiveListTactic::Vertical,
             separator: ",",
@@ -47,6 +49,7 @@ impl<'a> ListFormatting<'a> {
             nested: false,
             align_comments: true,
             config,
+            span,
         }
     }
 
@@ -120,6 +123,7 @@ pub(crate) enum ListItemCommentStyle {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ListItem {
+    pub(crate) span: Span,
     // None for comments mean that they are not present.
     pub(crate) pre_comment: Option<String>,
     pub(crate) pre_comment_style: ListItemCommentStyle,
@@ -132,8 +136,9 @@ pub(crate) struct ListItem {
 }
 
 impl ListItem {
-    pub(crate) fn from_item(item: RewriteResult) -> ListItem {
+    pub(crate) fn from_item_with_span(item: RewriteResult, span: Span) -> ListItem {
         ListItem {
+            span,
             pre_comment: None,
             pre_comment_style: ListItemCommentStyle::None,
             item: item,
@@ -181,8 +186,9 @@ impl ListItem {
         self.pre_comment.is_some() || self.post_comment.is_some()
     }
 
-    pub(crate) fn from_str<S: Into<String>>(s: S) -> ListItem {
+    pub(crate) fn from_str_with_span<S: Into<String>>(s: S, span: Span) -> ListItem {
         ListItem {
+            span,
             pre_comment: None,
             pre_comment_style: ListItemCommentStyle::None,
             item: Ok(s.into()),
@@ -261,7 +267,11 @@ where
 }
 
 // Format a list of commented items into a string.
-pub(crate) fn write_list<I, T>(items: I, formatting: &ListFormatting<'_>) -> RewriteResult
+pub(crate) fn write_list<I, T>(
+    context: &RewriteContext<'_>,
+    items: I,
+    formatting: &ListFormatting<'_>,
+) -> RewriteResult
 where
     I: IntoIterator<Item = T> + Clone,
     T: AsRef<ListItem>,
@@ -283,6 +293,8 @@ where
 
     let mut line_len = 0;
     let indent_str = &formatting.shape.indent.to_string(formatting.config);
+    let mut prev_hi = formatting.span.lo();
+
     while let Some((i, item)) = iter.next() {
         let item = item.as_ref();
         let inner_item = item.item.as_ref().or_else(|err| Err(err.clone()))?;
@@ -310,99 +322,110 @@ where
             continue;
         }
 
-        match tactic {
-            DefinitiveListTactic::Horizontal if !first => {
-                result.push(' ');
-            }
-            DefinitiveListTactic::SpecialMacro(num_args_before) => {
-                if i == 0 {
-                    // Nothing
-                } else if i < num_args_before {
-                    result.push(' ');
-                } else if i <= num_args_before + 1 {
-                    result.push('\n');
-                    result.push_str(indent_str);
-                } else {
+        let span_before_item = mk_sp(prev_hi, item.span.lo());
+        if !context
+            .config
+            .file_lines()
+            .contains(&context.psess.lookup_line_range(span_before_item))
+        {
+            result.push_str(context.snippet(span_before_item));
+        } else {
+            match tactic {
+                DefinitiveListTactic::Horizontal if !first => {
                     result.push(' ');
                 }
-            }
-            DefinitiveListTactic::Vertical
-                if !first && !inner_item.is_empty() && !result.is_empty() =>
-            {
-                result.push('\n');
-                result.push_str(indent_str);
-            }
-            DefinitiveListTactic::Mixed => {
-                let total_width = total_item_width(item) + item_sep_len;
-
-                // 1 is space between separator and item.
-                if (line_len > 0 && line_len + 1 + total_width > formatting.shape.width)
-                    || prev_item_had_post_comment
-                    || (formatting.nested
-                        && (prev_item_is_nested_import || (!first && inner_item.contains("::"))))
+                DefinitiveListTactic::SpecialMacro(num_args_before) => {
+                    if i == 0 {
+                        // Nothing
+                    } else if i < num_args_before {
+                        result.push(' ');
+                    } else if i <= num_args_before + 1 {
+                        result.push('\n');
+                        result.push_str(indent_str);
+                    } else {
+                        result.push(' ');
+                    }
+                }
+                DefinitiveListTactic::Vertical
+                    if !first && !inner_item.is_empty() && !result.is_empty() =>
                 {
                     result.push('\n');
                     result.push_str(indent_str);
-                    line_len = 0;
-                    if formatting.ends_with_newline {
-                        trailing_separator = true;
-                    }
-                } else if line_len > 0 {
-                    result.push(' ');
-                    line_len += 1;
                 }
+                DefinitiveListTactic::Mixed => {
+                    let total_width = total_item_width(item) + item_sep_len;
 
-                if last && formatting.ends_with_newline {
-                    separate = formatting.trailing_separator != SeparatorTactic::Never;
-                }
-
-                line_len += total_width;
-            }
-            _ => {}
-        }
-
-        // Pre-comments
-        if let Some(ref comment) = item.pre_comment {
-            // Block style in non-vertical mode.
-            let block_mode = tactic == DefinitiveListTactic::Horizontal;
-            // Width restriction is only relevant in vertical mode.
-            let comment =
-                rewrite_comment(comment, block_mode, formatting.shape, formatting.config)?;
-            result.push_str(&comment);
-
-            if !inner_item.is_empty() {
-                use DefinitiveListTactic::*;
-                if matches!(tactic, Vertical | Mixed | SpecialMacro(_)) {
-                    // We cannot keep pre-comments on the same line if the comment is normalized.
-                    let keep_comment = if formatting.config.normalize_comments()
-                        || item.pre_comment_style == ListItemCommentStyle::DifferentLine
+                    // 1 is space between separator and item.
+                    if (line_len > 0 && line_len + 1 + total_width > formatting.shape.width)
+                        || prev_item_had_post_comment
+                        || (formatting.nested
+                            && (prev_item_is_nested_import
+                                || (!first && inner_item.contains("::"))))
                     {
-                        false
-                    } else {
-                        // We will try to keep the comment on the same line with the item here.
-                        // 1 = ` `
-                        let total_width = total_item_width(item) + item_sep_len + 1;
-                        total_width <= formatting.shape.width
-                    };
-                    if keep_comment {
-                        result.push(' ');
-                    } else {
                         result.push('\n');
                         result.push_str(indent_str);
-                        // This is the width of the item (without comments).
-                        line_len = item.item.as_ref().map_or(0, |s| unicode_str_width(s));
+                        line_len = 0;
+                        if formatting.ends_with_newline {
+                            trailing_separator = true;
+                        }
+                    } else if line_len > 0 {
+                        result.push(' ');
+                        line_len += 1;
                     }
-                } else {
-                    result.push(' ')
+
+                    if last && formatting.ends_with_newline {
+                        separate = formatting.trailing_separator != SeparatorTactic::Never;
+                    }
+
+                    line_len += total_width;
                 }
+                _ => {}
             }
-            item_max_width = None;
+
+            // Pre-comments
+            if let Some(ref comment) = item.pre_comment {
+                // Block style in non-vertical mode.
+                let block_mode = tactic == DefinitiveListTactic::Horizontal;
+                // Width restriction is only relevant in vertical mode.
+                let comment =
+                    rewrite_comment(comment, block_mode, formatting.shape, formatting.config)?;
+                result.push_str(&comment);
+
+                if !inner_item.is_empty() {
+                    use DefinitiveListTactic::*;
+                    if matches!(tactic, Vertical | Mixed | SpecialMacro(_)) {
+                        // We cannot keep pre-comments on the same line if the comment is normalized.
+                        let keep_comment = if formatting.config.normalize_comments()
+                            || item.pre_comment_style == ListItemCommentStyle::DifferentLine
+                        {
+                            false
+                        } else {
+                            // We will try to keep the comment on the same line with the item here.
+                            // 1 = ` `
+                            let total_width = total_item_width(item) + item_sep_len + 1;
+                            total_width <= formatting.shape.width
+                        };
+                        if keep_comment {
+                            result.push(' ');
+                        } else {
+                            result.push('\n');
+                            result.push_str(indent_str);
+                            // This is the width of the item (without comments).
+                            line_len = item.item.as_ref().map_or(0, |s| unicode_str_width(s));
+                        }
+                    } else {
+                        result.push(' ')
+                    }
+                }
+                item_max_width = None;
+            }
+
+            if separate && sep_place.is_front() && !first {
+                result.push_str(formatting.separator.trim());
+                result.push(' ');
+            }
         }
 
-        if separate && sep_place.is_front() && !first {
-            result.push_str(formatting.separator.trim());
-            result.push(' ');
-        }
         result.push_str(inner_item);
 
         // Post-comments
@@ -518,8 +541,12 @@ where
 
         prev_item_had_post_comment = item.post_comment.is_some();
         prev_item_is_nested_import = inner_item.contains("::");
+        if item.span != DUMMY_SP {
+            prev_hi = item.span.hi();
+        }
     }
 
+    dbg!(&result);
     Ok(result)
 }
 
@@ -782,6 +809,7 @@ where
 
             let item_span = mk_sp(lo, hi);
             ListItem {
+                span: item_span,
                 pre_comment,
                 pre_comment_style,
                 // leave_last is set to true only for rewrite_items
@@ -934,6 +962,7 @@ pub(crate) fn struct_lit_formatting<'a>(
     shape: Shape,
     tactic: DefinitiveListTactic,
     context: &'a RewriteContext<'_>,
+    span: Span,
     force_no_trailing_comma: bool,
 ) -> ListFormatting<'a> {
     let ends_with_newline = context.config.indent_style() != IndentStyle::Visual
@@ -953,5 +982,6 @@ pub(crate) fn struct_lit_formatting<'a>(
         nested: false,
         align_comments: true,
         config: context.config,
+        span,
     }
 }

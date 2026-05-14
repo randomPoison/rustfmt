@@ -303,9 +303,15 @@ impl LineRangeUtils for ParseSess {
             "span crossed file boundary: lo: {lo:?}, hi: {hi:?}"
         );
 
-        // in case the span starts with a newline, the line range is off by 1 without the
-        // adjustment below
-        let offset = 1 + if starts_with_newline(&snippet) { 1 } else { 0 };
+        // in case the span starts with a newline, the line range is off by 1
+        // without the adjustment below
+        //
+        // TODO: This was throwing off file line lookup when selecting a span
+        // that started with a newline, specifically when building the span for
+        // a function params list that started with a couple of newlines. Need
+        // to dig into this further to understand the places where this offset
+        // check was necessary.
+        let offset = 1; // + if starts_with_newline(&snippet) { 1 } else { 0 };
         // Line numbers start at 1
         LineRange {
             file: lo.sf.clone(),

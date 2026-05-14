@@ -72,11 +72,12 @@ fn wrap_reorderable_items(
     context: &RewriteContext<'_>,
     list_items: &[ListItem],
     shape: Shape,
+    span: Span,
 ) -> RewriteResult {
-    let fmt = ListFormatting::new(shape, context.config)
+    let fmt = ListFormatting::new(shape, context.config, span)
         .separator("")
         .align_comments(false);
-    write_list(list_items, &fmt)
+    write_list(context, list_items, &fmt)
 }
 
 fn rewrite_reorderable_item(
@@ -156,11 +157,11 @@ fn rewrite_reorderable_or_regroupable_items(
                                     ..list_item
                                 }
                             } else {
-                                ListItem::from_item(item)
+                                ListItem::from_item_with_span(item, use_tree.span())
                             }
                         })
                         .collect();
-                    wrap_reorderable_items(context, &item_vec, nested_shape)
+                    wrap_reorderable_items(context, &item_vec, nested_shape, span)
                 })
                 .collect::<Result<Vec<_>, RewriteError>>()?;
 
@@ -185,7 +186,7 @@ fn rewrite_reorderable_or_regroupable_items(
             item_pair_vec.sort_by(|a, b| compare_items(a.1, b.1, context));
             let item_vec: Vec<_> = item_pair_vec.into_iter().map(|pair| pair.0).collect();
 
-            wrap_reorderable_items(context, &item_vec, shape)
+            wrap_reorderable_items(context, &item_vec, shape, span)
         }
     }
 }

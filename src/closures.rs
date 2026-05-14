@@ -14,7 +14,7 @@ use crate::rewrite::{Rewrite, RewriteContext, RewriteError, RewriteErrorExt, Rew
 use crate::shape::Shape;
 use crate::source_map::SpanUtils;
 use crate::types::rewrite_bound_params;
-use crate::utils::{NodeIdExt, last_line_width, left_most_sub_expr, stmt_expr};
+use crate::utils::{NodeIdExt, last_line_width, left_most_sub_expr, mk_sp, stmt_expr};
 
 // This module is pretty messy because of the rules around closures and blocks:
 // FIXME - the below is probably no longer true in full.
@@ -309,6 +309,7 @@ fn rewrite_closure_fn_decl(
     let param_shape = nested_shape.offset_left(1, span)?.visual_indent(0);
     let ret_str = fn_decl.output.rewrite_result(context, param_shape)?;
 
+    let list_lo = context.snippet_provider.span_after(span, "|");
     let param_items = itemize_list(
         context,
         fn_decl.inputs.iter(),
@@ -317,7 +318,7 @@ fn rewrite_closure_fn_decl(
         |param| span_lo_for_param(param),
         |param| span_hi_for_param(context, param),
         |param| param.rewrite_result(context, param_shape),
-        context.snippet_provider.span_after(span, "|"),
+        list_lo,
         body.span.lo(),
         false,
     );
@@ -335,10 +336,10 @@ fn rewrite_closure_fn_decl(
         _ => param_shape,
     };
 
-    let fmt = ListFormatting::new(param_shape, context.config)
+    let fmt = ListFormatting::new(param_shape, context.config, mk_sp(list_lo, body.span.lo()))
         .tactic(tactic)
         .preserve_newline(true);
-    let list_str = write_list(&item_vec, &fmt)?;
+    let list_str = write_list(context, &item_vec, &fmt)?;
     let mut prefix = format!("{binder}{const_}{immovable}{coro}{capture_str}|{list_str}|");
 
     if !ret_str.is_empty() {

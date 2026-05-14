@@ -658,12 +658,12 @@ impl<'a> Context<'a> {
             _ => false,
         };
 
-        let fmt = ListFormatting::new(self.nested_shape, self.context.config)
+        let fmt = ListFormatting::new(self.nested_shape, self.context.config, span)
             .tactic(tactic)
             .trailing_separator(trailing_separator)
             .ends_with_newline(ends_with_newline);
 
-        write_list(&list_items, &fmt)
+        write_list(self.context, &list_items, &fmt)
             .map(|items_str| (tactic == DefinitiveListTactic::Horizontal, items_str))
     }
 

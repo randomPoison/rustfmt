@@ -400,12 +400,12 @@ where
             context.config.trailing_comma()
         };
 
-        let fmt = ListFormatting::new(list_shape, context.config)
+        let fmt = ListFormatting::new(list_shape, context.config, mk_sp(list_lo, span.hi()))
             .tactic(tactic)
             .trailing_separator(trailing_separator)
             .ends_with_newline(tactic.ends_with_newline(context.config.indent_style()))
             .preserve_newline(true);
-        (write_list(&item_vec, &fmt)?, tactic)
+        (write_list(context, &item_vec, &fmt)?, tactic)
     };
 
     let args = if tactic == DefinitiveListTactic::Horizontal

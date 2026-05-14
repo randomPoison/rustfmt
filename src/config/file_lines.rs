@@ -12,6 +12,7 @@ use serde_json as json;
 use thiserror::Error;
 
 /// A range of lines in a file, inclusive of both ends.
+#[derive(Debug)]
 pub struct LineRange {
     pub(crate) file: Arc<SourceFile>,
     pub(crate) lo: usize,

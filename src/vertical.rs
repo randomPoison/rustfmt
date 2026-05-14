@@ -262,11 +262,11 @@ fn rewrite_aligned_items_inner<T: AlignedItem>(
         context.config.trailing_comma()
     };
 
-    let fmt = ListFormatting::new(item_shape, context.config)
+    let fmt = ListFormatting::new(item_shape, context.config, span)
         .tactic(tactic)
         .trailing_separator(separator_tactic)
         .preserve_newline(true);
-    write_list(&items, &fmt).ok()
+    write_list(context, &items, &fmt).ok()
 }
 
 /// Returns the index in `fields` up to which a field belongs to the current group.

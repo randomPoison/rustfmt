@@ -1866,10 +1866,11 @@ fn rewrite_struct_lit<'a>(
             nested_shape,
             tactic,
             context,
+            span,
             force_no_trailing_comma || has_base_or_rest || !context.use_block_indent(),
         );
 
-        write_list(&item_vec, &fmt)?
+        write_list(context, &item_vec, &fmt)?
     };
 
     let fields_str =
@@ -2013,10 +2014,10 @@ fn rewrite_tuple_in_visual_indent_style<'a, T: 'a + IntoOverflowableItem<'a>>(
         Separator::Comma,
         nested_shape.width,
     );
-    let fmt = ListFormatting::new(nested_shape, context.config)
+    let fmt = ListFormatting::new(nested_shape, context.config, mk_sp(list_lo, span.hi()))
         .tactic(tactic)
         .ends_with_newline(false);
-    let list_str = write_list(&item_vec, &fmt)?;
+    let list_str = write_list(context, &item_vec, &fmt)?;
 
     Ok(format!("({list_str})"))
 }

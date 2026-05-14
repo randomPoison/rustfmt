@@ -464,6 +464,7 @@ pub(crate) fn rewrite_macro_def(
         return Ok(result);
     }
 
+    let branch_list_start = context.snippet_provider.span_after(span, "{");
     let branch_items = itemize_list(
         context,
         parsed_def.branches.iter(),
@@ -481,23 +482,27 @@ pub(crate) fn rewrite_macro_def(
             }
             Err(e) => Err(e),
         },
-        context.snippet_provider.span_after(span, "{"),
+        branch_list_start,
         span.hi(),
         false,
     )
     .collect::<Vec<_>>();
 
-    let fmt = ListFormatting::new(arm_shape, context.config)
-        .separator(if def.macro_rules { ";" } else { "" })
-        .trailing_separator(SeparatorTactic::Always)
-        .preserve_newline(true);
+    let fmt = ListFormatting::new(
+        arm_shape,
+        context.config,
+        mk_sp(branch_list_start, span.hi()),
+    )
+    .separator(if def.macro_rules { ";" } else { "" })
+    .trailing_separator(SeparatorTactic::Always)
+    .preserve_newline(true);
 
     if multi_branch_style {
         result += " {";
         result += &arm_shape.indent.to_string_with_newline(context.config);
     }
 
-    match write_list(&branch_items, &fmt) {
+    match write_list(context, &branch_items, &fmt) {
         Ok(ref s) => result += s,
         Err(_) => return snippet,
     }

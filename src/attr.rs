@@ -143,11 +143,11 @@ fn format_derive(
     };
 
     // Format the collection of items.
-    let fmt = ListFormatting::new(argument_shape, context.config)
+    let fmt = ListFormatting::new(argument_shape, context.config, derives[0].span)
         .tactic(tactic)
         .trailing_separator(trailing_separator)
         .ends_with_newline(false);
-    let item_str = write_list(&all_items, &fmt).ok()?;
+    let item_str = write_list(context, &all_items, &fmt).ok()?;
 
     debug!("item_str: '{}'", item_str);
 
