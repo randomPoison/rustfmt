@@ -14,7 +14,7 @@ use crate::comment::{
     FindUncommented, combine_strs_with_missing_comments, contains_comment, is_last_comment_block,
     recover_comment_removed, recover_missing_comment_in_span, rewrite_missing_comment,
 };
-use crate::config::file_lines::LineRange;
+// use crate::config::file_lines::LineRange;
 use crate::config::lists::*;
 use crate::config::{BraceStyle, Config, IndentStyle, StyleEdition};
 use crate::expr::{

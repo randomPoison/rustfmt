@@ -19,7 +19,7 @@ use crate::config::options::Color;
 use crate::ignore_path::IgnorePathSet;
 use crate::parse::parser::{ModError, ModulePathSuccess};
 use crate::source_map::LineRangeUtils;
-use crate::utils::starts_with_newline;
+// use crate::utils::starts_with_newline;
 use crate::visitor::SnippetProvider;
 use crate::{Config, ErrorKind, FileName};
 
@@ -290,11 +290,11 @@ impl ParseSess {
 
 impl LineRangeUtils for ParseSess {
     fn lookup_line_range(&self, span: Span) -> LineRange {
-        let snippet = self
-            .raw_psess
-            .source_map()
-            .span_to_snippet(span)
-            .unwrap_or_default();
+        // let snippet = self
+        //     .raw_psess
+        //     .source_map()
+        //     .span_to_snippet(span)
+        //     .unwrap_or_default();
         let lo = self.raw_psess.source_map().lookup_line(span.lo()).unwrap();
         let hi = self.raw_psess.source_map().lookup_line(span.hi()).unwrap();
 
