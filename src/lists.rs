@@ -10,11 +10,11 @@ use crate::config::lists::*;
 use crate::config::{Config, IndentStyle};
 use crate::rewrite::{ExceedsMaxWidthError, RewriteContext, RewriteError, RewriteResult};
 use crate::shape::{Indent, Shape};
+use crate::source_map::LineRangeUtils;
 use crate::utils::{
     count_newlines, first_line_width, last_line_width, mk_sp, starts_with_newline,
     unicode_str_width,
 };
-use crate::visitor::SnippetProvider;
 
 pub(crate) struct ListFormatting<'a> {
     tactic: DefinitiveListTactic,
@@ -560,11 +560,11 @@ fn post_comment_alignment(item_max_width: Option<usize>, inner_item_width: usize
     item_max_width.unwrap_or(0).saturating_sub(inner_item_width)
 }
 
-pub(crate) struct ListItems<'a, I, F1, F2, F3>
+pub(crate) struct ListItems<'a, 'b, I, F1, F2, F3>
 where
     I: Iterator,
 {
-    snippet_provider: &'a SnippetProvider,
+    context: &'a RewriteContext<'b>,
     inner: Peekable<I>,
     get_lo: F1,
     get_hi: F2,
@@ -740,7 +740,7 @@ pub(crate) fn has_extra_newline(post_snippet: &str, comment_end: usize) -> bool 
     count_newlines(test_snippet) > 1
 }
 
-impl<'a, T, I, F1, F2, F3> Iterator for ListItems<'a, I, F1, F2, F3>
+impl<'a, 'b, T, I, F1, F2, F3> Iterator for ListItems<'a, 'b, I, F1, F2, F3>
 where
     I: Iterator<Item = T>,
     F1: Fn(&T) -> BytePos,
@@ -751,10 +751,15 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next().map(|item| {
+            let context = self.context;
+            let lo = (self.get_lo)(&item);
+            let hi = (self.get_hi)(&item);
+            let span = mk_sp(lo, hi);
+
             // Pre-comment
-            let pre_snippet = self
+            let pre_snippet = context
                 .snippet_provider
-                .span_to_snippet(mk_sp(self.prev_span_end, (self.get_lo)(&item)))
+                .span_to_snippet(mk_sp(self.prev_span_end, lo))
                 .unwrap_or("");
             let (pre_comment, pre_comment_style) = extract_pre_comment(pre_snippet);
 
@@ -763,9 +768,9 @@ where
                 Some(next_item) => (self.get_lo)(next_item),
                 None => self.next_span_start,
             };
-            let post_snippet = self
+            let post_snippet = context
                 .snippet_provider
-                .span_to_snippet(mk_sp((self.get_hi)(&item), next_start))
+                .span_to_snippet(mk_sp(hi, next_start))
                 .unwrap_or("");
             let is_last = self.inner.peek().is_none();
             let comment_end =
@@ -774,7 +779,7 @@ where
             let post_comment =
                 extract_post_comment(post_snippet, comment_end, self.separator, is_last);
 
-            self.prev_span_end = (self.get_hi)(&item) + BytePos(comment_end as u32);
+            self.prev_span_end = hi + BytePos(comment_end as u32);
 
             ListItem {
                 pre_comment,
@@ -782,6 +787,8 @@ where
                 // leave_last is set to true only for rewrite_items
                 item: if self.inner.peek().is_none() && self.leave_last {
                     Err(RewriteError::SkipFormatting)
+                } else if out_of_file_lines_range!(context, span) {
+                    Ok(context.snippet(span).to_owned())
                 } else {
                     (self.get_item_string)(&item)
                 },
@@ -794,8 +801,8 @@ where
 
 #[allow(clippy::too_many_arguments)]
 // Creates an iterator over a list's items with associated comments.
-pub(crate) fn itemize_list<'a, T, I, F1, F2, F3>(
-    snippet_provider: &'a SnippetProvider,
+pub(crate) fn itemize_list<'a, 'b, T, I, F1, F2, F3>(
+    context: &'a RewriteContext<'b>,
     inner: I,
     terminator: &'a str,
     separator: &'a str,
@@ -805,7 +812,7 @@ pub(crate) fn itemize_list<'a, T, I, F1, F2, F3>(
     prev_span_end: BytePos,
     next_span_start: BytePos,
     leave_last: bool,
-) -> ListItems<'a, I, F1, F2, F3>
+) -> ListItems<'a, 'b, I, F1, F2, F3>
 where
     I: Iterator<Item = T>,
     F1: Fn(&T) -> BytePos,
@@ -813,7 +820,7 @@ where
     F3: Fn(&T) -> RewriteResult,
 {
     ListItems {
-        snippet_provider,
+        context,
         inner: inner.peekable(),
         get_lo,
         get_hi,

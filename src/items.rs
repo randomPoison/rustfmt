@@ -612,7 +612,7 @@ impl<'a> FmtVisitor<'a> {
 
         let itemize_list_with = |one_line_width: usize| {
             itemize_list(
-                self.snippet_provider,
+                &self.get_context(),
                 enum_def.variants.iter(),
                 "}",
                 ",",
@@ -2874,7 +2874,7 @@ fn rewrite_params(
         return Ok(comment.to_owned());
     }
     let param_items: Vec<_> = itemize_list(
-        context.snippet_provider,
+        context,
         params.iter(),
         ")",
         ",",
@@ -3152,7 +3152,7 @@ fn rewrite_bounds_on_where_clause(
     let end_of_preds = predicates[len - 1].span().hi();
     let span_end = span_end.unwrap_or(end_of_preds);
     let items = itemize_list(
-        context.snippet_provider,
+        context,
         predicates.iter(),
         terminator,
         ",",
@@ -3238,7 +3238,7 @@ fn rewrite_where_clause(
     let end_of_preds = predicates[len - 1].span().hi();
     let span_end = span_end.unwrap_or(end_of_preds);
     let items = itemize_list(
-        context.snippet_provider,
+        context,
         predicates.iter(),
         terminator,
         ",",
