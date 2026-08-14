@@ -2546,13 +2546,6 @@ fn rewrite_fn_base(
     );
 
     result.push('(');
-    // Check if vertical layout was forced.
-    if one_line_budget == 0
-        && !snuggle_angle_bracket
-        && context.config.indent_style() == IndentStyle::Visual
-    {
-        result.push_str(&param_indent.to_string_with_newline(context.config));
-    }
 
     let params_end = if fd.inputs.is_empty() {
         context
@@ -2568,6 +2561,33 @@ fn rewrite_fn_base(
             .span_after(mk_sp(fn_sig.generics.span.hi(), span.hi()), "("),
         params_end,
     );
+    let preserved_pre_param_snippet = fd.inputs.first().and_then(|first_param| {
+        let pre_param_span = mk_sp(params_span.lo(), span_lo_for_param(first_param));
+        let snippet = context.snippet(pre_param_span);
+        let mut snippet_lines = context.psess.lookup_line_range(pre_param_span);
+        if snippet.contains('\n') {
+            snippet_lines.hi = snippet_lines.hi.saturating_sub(1);
+        }
+        if !snippet.is_empty()
+            && !contains_comment(snippet)
+            && !context.config.file_lines().is_all()
+            && !context.config.file_lines().intersects(&snippet_lines)
+        {
+            Some(snippet)
+        } else {
+            None
+        }
+    });
+
+    // Check if vertical layout was forced.
+    if preserved_pre_param_snippet.is_none()
+        && one_line_budget == 0
+        && !snuggle_angle_bracket
+        && context.config.indent_style() == IndentStyle::Visual
+    {
+        result.push_str(&param_indent.to_string_with_newline(context.config));
+    }
+
     let param_str = rewrite_params(
         context,
         &fd.inputs,
@@ -2587,7 +2607,12 @@ fn rewrite_fn_base(
     let mut params_last_line_contains_comment = false;
     let mut no_params_and_over_max_width = false;
 
-    if put_params_in_block {
+    if let Some(pre_param_snippet) = preserved_pre_param_snippet {
+        result.push_str(pre_param_snippet);
+        result.push_str(&param_str);
+        result.push_str(&indent.to_string_with_newline(context.config));
+        result.push(')');
+    } else if put_params_in_block {
         param_indent = indent.block_indent(context.config);
         result.push_str(&param_indent.to_string_with_newline(context.config));
         result.push_str(&param_str);

@@ -127,6 +127,8 @@ pub(crate) struct ListItem {
     // rewrite.
     pub(crate) item: RewriteResult,
     pub(crate) post_comment: Option<String>,
+    // An unselected, comment-free snippet between this item and the next item.
+    pub(crate) preserved_post_snippet: Option<String>,
     // Whether there is extra whitespace before this item.
     pub(crate) new_lines: bool,
 }
@@ -138,6 +140,7 @@ impl ListItem {
             pre_comment_style: ListItemCommentStyle::None,
             item: item,
             post_comment: None,
+            preserved_post_snippet: None,
             new_lines: false,
         }
     }
@@ -153,6 +156,10 @@ impl ListItem {
                 .post_comment
                 .as_ref()
                 .map_or(false, |s| s.contains('\n'))
+            || self
+                .preserved_post_snippet
+                .as_ref()
+                .map_or(false, |s| s.contains('\n'))
     }
 
     pub(crate) fn is_multiline(&self) -> bool {
@@ -163,6 +170,10 @@ impl ListItem {
                 .map_or(false, |s| s.contains('\n'))
             || self
                 .post_comment
+                .as_ref()
+                .map_or(false, |s| s.contains('\n'))
+            || self
+                .preserved_post_snippet
                 .as_ref()
                 .map_or(false, |s| s.contains('\n'))
     }
@@ -187,6 +198,7 @@ impl ListItem {
             pre_comment_style: ListItemCommentStyle::None,
             item: Ok(s.into()),
             post_comment: None,
+            preserved_post_snippet: None,
             new_lines: false,
         }
     }
@@ -201,7 +213,10 @@ impl ListItem {
             !matches!(*s, Ok(ref s) if !s.is_empty())
         }
 
-        !(empty(&self.pre_comment) && empty_result(&self.item) && empty(&self.post_comment))
+        !(empty(&self.pre_comment)
+            && empty_result(&self.item)
+            && empty(&self.post_comment)
+            && empty(&self.preserved_post_snippet))
     }
 }
 
@@ -280,6 +295,7 @@ where
         SeparatorPlace::from_tactic(formatting.separator_place, tactic, formatting.separator);
     let mut prev_item_had_post_comment = false;
     let mut prev_item_is_nested_import = false;
+    let mut previous_gap_was_preserved = false;
 
     let mut line_len = 0;
     let indent_str = &formatting.shape.indent.to_string(formatting.config);
@@ -310,55 +326,58 @@ where
             continue;
         }
 
-        match tactic {
-            DefinitiveListTactic::Horizontal if !first => {
-                result.push(' ');
-            }
-            DefinitiveListTactic::SpecialMacro(num_args_before) => {
-                if i == 0 {
-                    // Nothing
-                } else if i < num_args_before {
-                    result.push(' ');
-                } else if i <= num_args_before + 1 {
-                    result.push('\n');
-                    result.push_str(indent_str);
-                } else {
+        if !previous_gap_was_preserved {
+            match tactic {
+                DefinitiveListTactic::Horizontal if !first => {
                     result.push(' ');
                 }
-            }
-            DefinitiveListTactic::Vertical
-                if !first && !inner_item.is_empty() && !result.is_empty() =>
-            {
-                result.push('\n');
-                result.push_str(indent_str);
-            }
-            DefinitiveListTactic::Mixed => {
-                let total_width = total_item_width(item) + item_sep_len;
-
-                // 1 is space between separator and item.
-                if (line_len > 0 && line_len + 1 + total_width > formatting.shape.width)
-                    || prev_item_had_post_comment
-                    || (formatting.nested
-                        && (prev_item_is_nested_import || (!first && inner_item.contains("::"))))
+                DefinitiveListTactic::SpecialMacro(num_args_before) => {
+                    if i == 0 {
+                        // Nothing
+                    } else if i < num_args_before {
+                        result.push(' ');
+                    } else if i <= num_args_before + 1 {
+                        result.push('\n');
+                        result.push_str(indent_str);
+                    } else {
+                        result.push(' ');
+                    }
+                }
+                DefinitiveListTactic::Vertical
+                    if !first && !inner_item.is_empty() && !result.is_empty() =>
                 {
                     result.push('\n');
                     result.push_str(indent_str);
-                    line_len = 0;
-                    if formatting.ends_with_newline {
-                        trailing_separator = true;
+                }
+                DefinitiveListTactic::Mixed => {
+                    let total_width = total_item_width(item) + item_sep_len;
+
+                    // 1 is space between separator and item.
+                    if (line_len > 0 && line_len + 1 + total_width > formatting.shape.width)
+                        || prev_item_had_post_comment
+                        || (formatting.nested
+                            && (prev_item_is_nested_import
+                                || (!first && inner_item.contains("::"))))
+                    {
+                        result.push('\n');
+                        result.push_str(indent_str);
+                        line_len = 0;
+                        if formatting.ends_with_newline {
+                            trailing_separator = true;
+                        }
+                    } else if line_len > 0 {
+                        result.push(' ');
+                        line_len += 1;
                     }
-                } else if line_len > 0 {
-                    result.push(' ');
-                    line_len += 1;
-                }
 
-                if last && formatting.ends_with_newline {
-                    separate = formatting.trailing_separator != SeparatorTactic::Never;
-                }
+                    if last && formatting.ends_with_newline {
+                        separate = formatting.trailing_separator != SeparatorTactic::Never;
+                    }
 
-                line_len += total_width;
+                    line_len += total_width;
+                }
+                _ => {}
             }
-            _ => {}
         }
 
         // Pre-comments
@@ -399,7 +418,7 @@ where
             item_max_width = None;
         }
 
-        if separate && sep_place.is_front() && !first {
+        if separate && sep_place.is_front() && !first && !previous_gap_was_preserved {
             result.push_str(formatting.separator.trim());
             result.push(' ');
         }
@@ -419,7 +438,9 @@ where
             result.push_str(&formatted_comment);
         }
 
-        if separate && sep_place.is_back() {
+        if let Some(ref snippet) = item.preserved_post_snippet {
+            result.push_str(snippet);
+        } else if separate && sep_place.is_back() {
             result.push_str(formatting.separator);
         }
 
@@ -518,6 +539,10 @@ where
 
         prev_item_had_post_comment = item.post_comment.is_some();
         prev_item_is_nested_import = inner_item.contains("::");
+        previous_gap_was_preserved = item.preserved_post_snippet.is_some();
+        if previous_gap_was_preserved {
+            line_len = last_line_width(&result);
+        }
     }
 
     Ok(result)
@@ -755,6 +780,7 @@ where
             let lo = (self.get_lo)(&item);
             let hi = (self.get_hi)(&item);
             let span = mk_sp(lo, hi);
+            let is_selected = !out_of_file_lines_range!(context, span);
 
             // Pre-comment
             let pre_snippet = context
@@ -776,10 +802,42 @@ where
             let comment_end =
                 get_comment_end(post_snippet, self.separator, self.terminator, is_last);
             let new_lines = has_extra_newline(post_snippet, comment_end);
-            let post_comment =
+            let mut post_comment =
                 extract_post_comment(post_snippet, comment_end, self.separator, is_last);
 
-            self.prev_span_end = hi + BytePos(comment_end as u32);
+            let preserved_post_snippet = if is_last || post_snippet.is_empty() {
+                None
+            } else {
+                // The separator belongs to the preceding item. Test only the layout after it,
+                // but preserve the complete gap.
+                let layout_offset = post_snippet
+                    .find_uncommented(self.separator)
+                    .map_or(0, |offset| offset + self.separator.len());
+                let layout_span = mk_sp(hi + BytePos(layout_offset as u32), next_start);
+                let mut layout_lines = context.psess.lookup_line_range(layout_span);
+
+                // The span ends at the next item's first byte. For a multiline snippet that
+                // boundary is reported as part of the next line, even though it is not in the
+                // snippet itself.
+                if post_snippet[layout_offset..].contains('\n') {
+                    layout_lines.hi = layout_lines.hi.saturating_sub(1);
+                }
+
+                if !context.config.file_lines().intersects(&layout_lines) {
+                    Some(post_snippet.to_owned())
+                } else {
+                    None
+                }
+            };
+
+            if preserved_post_snippet.is_some() {
+                // The raw gap already contains any comments that comment extraction found.
+                // Consume the whole gap so it is not extracted again before the next item.
+                post_comment = None;
+                self.prev_span_end = next_start;
+            } else {
+                self.prev_span_end = hi + BytePos(comment_end as u32);
+            }
 
             ListItem {
                 pre_comment,
@@ -787,12 +845,13 @@ where
                 // leave_last is set to true only for rewrite_items
                 item: if self.inner.peek().is_none() && self.leave_last {
                     Err(RewriteError::SkipFormatting)
-                } else if out_of_file_lines_range!(context, span) {
+                } else if !is_selected {
                     Ok(context.snippet(span).to_owned())
                 } else {
                     (self.get_item_string)(&item)
                 },
                 post_comment,
+                preserved_post_snippet,
                 new_lines,
             }
         })
