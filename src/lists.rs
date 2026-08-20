@@ -146,6 +146,8 @@ pub(crate) struct ListItem {
     // None for comments mean that they are not present.
     pub(crate) pre_comment: Option<String>,
     pub(crate) pre_comment_style: ListItemCommentStyle,
+    // The original indentation of an unselected item following a selected pre-comment.
+    pub(crate) preserved_item_indent: Option<String>,
     // Item should include attributes and doc comments. None indicates a failed
     // rewrite.
     pub(crate) item: RewriteResult,
@@ -161,6 +163,7 @@ impl ListItem {
         ListItem {
             pre_comment: None,
             pre_comment_style: ListItemCommentStyle::None,
+            preserved_item_indent: None,
             item: item,
             post_comment: None,
             preserved_post_snippet: None,
@@ -219,6 +222,7 @@ impl ListItem {
         ListItem {
             pre_comment: None,
             pre_comment_style: ListItemCommentStyle::None,
+            preserved_item_indent: None,
             item: Ok(s.into()),
             post_comment: None,
             preserved_post_snippet: None,
@@ -437,7 +441,8 @@ where
                         result.push(' ');
                     } else {
                         result.push('\n');
-                        result.push_str(indent_str);
+                        result
+                            .push_str(item.preserved_item_indent.as_deref().unwrap_or(indent_str));
                         // This is the width of the item (without comments).
                         line_len = item.item.as_ref().map_or(0, |s| unicode_str_width(s));
                     }
@@ -823,6 +828,23 @@ where
                 .unwrap_or("");
             let (pre_comment, pre_comment_style) = extract_pre_comment(pre_snippet);
 
+            let pre_comment_is_selected = pre_comment.as_ref().map_or(false, |comment| {
+                pre_snippet.find(comment).map_or(false, |offset| {
+                    let comment_lo = self.prev_span_end + BytePos(offset as u32);
+                    let comment_span =
+                        mk_sp(comment_lo, comment_lo + BytePos(comment.len() as u32));
+                    !out_of_file_lines_range!(context, comment_span)
+                })
+            });
+
+            let preserved_item_indent = if !is_selected && pre_comment_is_selected {
+                pre_snippet
+                    .rsplit_once('\n')
+                    .map(|(_, indent)| indent.to_owned())
+            } else {
+                None
+            };
+
             // Post-comment
             let (next_start, next_is_selected) = match self.inner.peek() {
                 Some(next_item) => {
@@ -920,6 +942,7 @@ where
             ListItem {
                 pre_comment,
                 pre_comment_style,
+                preserved_item_indent,
                 // leave_last is set to true only for rewrite_items
                 item: if self.inner.peek().is_none() && self.leave_last {
                     Err(RewriteError::SkipFormatting)
