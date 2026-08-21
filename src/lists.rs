@@ -154,8 +154,9 @@ pub(crate) struct ListItem {
     // None for comments mean that they are not present.
     pub(crate) pre_comment: Option<String>,
     pub(crate) pre_comment_style: ListItemCommentStyle,
-    // The original indentation of an unselected item following a selected pre-comment.
-    pub(crate) preserved_item_indent: Option<String>,
+    // Original whitespace immediately before an unselected item when it is not already included
+    // in a preserved gap.
+    pub(crate) preserved_item_prefix: Option<String>,
     // Item should include attributes and doc comments. None indicates a failed
     // rewrite.
     pub(crate) item: RewriteResult,
@@ -171,7 +172,7 @@ impl ListItem {
         ListItem {
             pre_comment: None,
             pre_comment_style: ListItemCommentStyle::None,
-            preserved_item_indent: None,
+            preserved_item_prefix: None,
             item: item,
             post_comment: None,
             preserved_post_snippet: None,
@@ -230,7 +231,7 @@ impl ListItem {
         ListItem {
             pre_comment: None,
             pre_comment_style: ListItemCommentStyle::None,
-            preserved_item_indent: None,
+            preserved_item_prefix: None,
             item: Ok(s.into()),
             post_comment: None,
             preserved_post_snippet: None,
@@ -344,6 +345,18 @@ where
         let inner_item = item.item.as_ref().or_else(|err| Err(err.clone()))?;
         let first = i == 0;
         let last = iter.peek().is_none();
+        let next_item_preserves_newlines = iter.peek().is_some_and(|(_, next_item)| {
+            next_item
+                .as_ref()
+                .preserved_item_prefix
+                .as_ref()
+                .is_some_and(|prefix| prefix.contains('\n'))
+        });
+        let item_prefix = if item.pre_comment.is_none() {
+            item.preserved_item_prefix.as_deref().unwrap_or(indent_str)
+        } else {
+            indent_str
+        };
         let mut separate = match sep_place {
             SeparatorPlace::Front => !first,
             SeparatorPlace::Back => !last || trailing_separator,
@@ -380,7 +393,7 @@ where
                         result.push(' ');
                     } else if i <= num_args_before + 1 {
                         result.push('\n');
-                        result.push_str(indent_str);
+                        result.push_str(item_prefix);
                     } else {
                         result.push(' ');
                     }
@@ -389,7 +402,7 @@ where
                     if !first && !inner_item.is_empty() && !result.is_empty() =>
                 {
                     result.push('\n');
-                    result.push_str(indent_str);
+                    result.push_str(item_prefix);
                 }
                 DefinitiveListTactic::Mixed => {
                     let total_width = total_item_width(item) + item_sep_len;
@@ -402,7 +415,7 @@ where
                                 || (!first && inner_item.contains("::"))))
                     {
                         result.push('\n');
-                        result.push_str(indent_str);
+                        result.push_str(item_prefix);
                         line_len = 0;
                         if formatting.ends_with_newline {
                             trailing_separator = true;
@@ -450,7 +463,7 @@ where
                     } else {
                         result.push('\n');
                         result
-                            .push_str(item.preserved_item_indent.as_deref().unwrap_or(indent_str));
+                            .push_str(item.preserved_item_prefix.as_deref().unwrap_or(indent_str));
                         // This is the width of the item (without comments).
                         line_len = item.item.as_ref().map_or(0, |s| unicode_str_width(s));
                     }
@@ -576,6 +589,7 @@ where
             && tactic == DefinitiveListTactic::Vertical
             && item.new_lines
             && item.preserved_post_snippet.is_none()
+            && !next_item_preserves_newlines
         {
             item_max_width = None;
             result.push('\n');
@@ -920,10 +934,17 @@ where
                 })
             });
 
-            let preserved_item_indent = if !is_selected && pre_comment_is_selected {
+            let preserved_item_prefix = if !is_selected && pre_comment_is_selected {
                 pre_snippet
                     .rsplit_once('\n')
                     .map(|(_, indent)| indent.to_owned())
+            } else if !is_selected
+                && pre_comment.is_none()
+                && pre_snippet.chars().all(char::is_whitespace)
+            {
+                // The list writer supplies the newline before this item. Retain all remaining
+                // whitespace rather than only the indentation directly before the item.
+                Some(pre_snippet.to_owned())
             } else {
                 None
             };
@@ -1064,7 +1085,7 @@ where
             ListItem {
                 pre_comment,
                 pre_comment_style,
-                preserved_item_indent,
+                preserved_item_prefix,
                 // leave_last is set to true only for rewrite_items
                 item: if self.inner.peek().is_none() && self.leave_last {
                     Err(RewriteError::SkipFormatting)
