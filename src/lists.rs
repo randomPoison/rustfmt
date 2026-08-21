@@ -825,6 +825,38 @@ fn contains_selected_comment(
     })
 }
 
+fn trim_selected_trailing_whitespace(
+    context: &RewriteContext<'_>,
+    snippet: &str,
+    snippet_lo: BytePos,
+) -> String {
+    let mut result = String::with_capacity(snippet.len());
+    let mut offset = 0;
+
+    for line in snippet.split_inclusive('\n') {
+        let line_lo = snippet_lo + BytePos(offset as u32);
+        let is_selected = !out_of_file_lines_range!(context, mk_sp(line_lo, line_lo));
+        let (line, line_ending) = if let Some(line) = line.strip_suffix("\r\n") {
+            (line, "\r\n")
+        } else if let Some(line) = line.strip_suffix('\n') {
+            (line, "\n")
+        } else {
+            (line, "")
+        };
+
+        if is_selected {
+            result.push_str(line.trim_end_matches([' ', '\t']));
+        } else {
+            result.push_str(line);
+        }
+        result.push_str(line_ending);
+
+        offset += line.len() + line_ending.len();
+    }
+
+    result
+}
+
 impl<'a, 'b, T, I, F1, F2, F3> Iterator for ListItems<'a, 'b, I, F1, F2, F3>
 where
     I: Iterator<Item = T>,
@@ -898,7 +930,9 @@ where
                     && !next_is_selected
                     && !contains_selected_comment(context, post_snippet, hi);
                 let partial_gap = if only_whitespace_is_selected {
-                    Some(PreservedPostSnippet::Complete(post_snippet.to_owned()))
+                    Some(PreservedPostSnippet::Complete(
+                        trim_selected_trailing_whitespace(context, post_snippet, hi),
+                    ))
                 } else if next_is_selected {
                     post_snippet.rfind('\n').and_then(|newline| {
                         let prefix_end = newline + 1;

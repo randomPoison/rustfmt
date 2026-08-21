@@ -2,7 +2,7 @@
 
 fn foo(
 first    :    i32,
-
+    
 // a comment
     selected: i32,
         last    :    i32,
