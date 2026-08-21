@@ -6,8 +6,7 @@ use std::iter::Peekable;
 use rustc_span::{BytePos, Span};
 
 use crate::comment::{
-    CodeCharKind, CommentCodeSlices, FindUncommented, contains_comment, find_comment_end,
-    rewrite_comment,
+    CodeCharKind, CommentCodeSlices, FindUncommented, find_comment_end, rewrite_comment,
 };
 use crate::config::lists::*;
 use crate::config::{Config, IndentStyle};
@@ -998,10 +997,6 @@ where
                         }
                         let layout_prefix = &post_snippet[layout_offset..prefix_end];
 
-                        if !contains_comment(layout_prefix) {
-                            return None;
-                        }
-
                         // Compute the lines containing the prefix without including either
                         // boundary line when it contains no layout text. In particular, the
                         // indentation immediately before the selected next item belongs to that
@@ -1016,7 +1011,12 @@ where
                             + usize::from(first_line.trim().is_empty());
                         prefix_lines.hi = next_line.saturating_sub(1);
 
-                        if !context.config.file_lines().intersects(&prefix_lines) {
+                        // A single newline between adjacent items has no interior lines to
+                        // preserve. Otherwise, keep every unselected line in the prefix,
+                        // including whitespace-only lines.
+                        if prefix_lines.lo <= prefix_lines.hi
+                            && !context.config.file_lines().intersects(&prefix_lines)
+                        {
                             Some(PreservedPostSnippet::LinePrefix(
                                 post_snippet[..prefix_end].to_owned(),
                             ))
