@@ -831,15 +831,25 @@ fn selected_comment_offset(
     })
 }
 
-fn trim_selected_trailing_whitespace(
+fn normalize_selected_whitespace(
     context: &RewriteContext<'_>,
     snippet: &str,
     snippet_lo: BytePos,
 ) -> String {
     let mut result = String::with_capacity(snippet.len());
-    let mut offset = 0;
+    let mut offset = 0usize;
+    let lines: Vec<_> = snippet
+        .split_inclusive('\n')
+        .map(|line| {
+            let line_offset = offset;
+            offset += line.len();
+            (line_offset, line)
+        })
+        .collect();
+    let mut i = 0;
 
-    for line in snippet.split_inclusive('\n') {
+    while i < lines.len() {
+        let (offset, line) = lines[i];
         let line_lo = snippet_lo + BytePos(offset as u32);
         let is_selected = !out_of_file_lines_range!(context, mk_sp(line_lo, line_lo));
         let (line, line_ending) = if let Some(line) = line.strip_suffix("\r\n") {
@@ -850,14 +860,29 @@ fn trim_selected_trailing_whitespace(
             (line, "")
         };
 
-        if is_selected {
+        if is_selected && line.trim().is_empty() {
+            let mut next = i + 1;
+            while next < lines.len() {
+                let (next_offset, next_line) = lines[next];
+                let next_lo = snippet_lo + BytePos(next_offset as u32);
+                if out_of_file_lines_range!(context, mk_sp(next_lo, next_lo))
+                    || !next_line.trim().is_empty()
+                {
+                    break;
+                }
+                next += 1;
+            }
+
+            result.push_str(line_ending);
+            i = next;
+            continue;
+        } else if is_selected {
             result.push_str(line.trim_end_matches([' ', '\t']));
         } else {
             result.push_str(line);
         }
         result.push_str(line_ending);
-
-        offset += line.len() + line_ending.len();
+        i += 1;
     }
 
     result
@@ -937,7 +962,7 @@ where
                     !is_selected && !next_is_selected && selected_comment_offset.is_none();
                 let partial_gap = if only_whitespace_is_selected {
                     Some(PreservedPostSnippet::Complete(
-                        trim_selected_trailing_whitespace(context, post_snippet, hi),
+                        normalize_selected_whitespace(context, post_snippet, hi),
                     ))
                 } else if let Some(comment_offset) =
                     selected_comment_offset.filter(|&offset| offset >= layout_offset)
