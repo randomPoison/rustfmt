@@ -1,0 +1,9 @@
+// rustfmt-file_lines: [{"file":"tests/source/file-lines-lists/params-only-whitespace.rs","range":[5,5]}]
+
+fn foo(
+first    :    i32,
+
+// a comment
+    selected: i32,
+        last    :    i32,
+) {}

@@ -5,7 +5,10 @@ use std::iter::Peekable;
 
 use rustc_span::{BytePos, Span};
 
-use crate::comment::{FindUncommented, contains_comment, find_comment_end, rewrite_comment};
+use crate::comment::{
+    CodeCharKind, CommentCodeSlices, FindUncommented, contains_comment, find_comment_end,
+    rewrite_comment,
+};
 use crate::config::lists::*;
 use crate::config::{Config, IndentStyle};
 use crate::rewrite::{ExceedsMaxWidthError, RewriteContext, RewriteError, RewriteResult};
@@ -805,6 +808,23 @@ pub(crate) fn has_extra_newline(post_snippet: &str, comment_end: usize) -> bool 
     count_newlines(test_snippet) > 1
 }
 
+fn contains_selected_comment(
+    context: &RewriteContext<'_>,
+    snippet: &str,
+    snippet_lo: BytePos,
+) -> bool {
+    CommentCodeSlices::new(snippet).any(|(kind, offset, comment)| {
+        if kind != CodeCharKind::Comment {
+            return false;
+        }
+
+        let comment = comment.trim_end();
+        let comment_lo = snippet_lo + BytePos(offset as u32);
+        let comment_span = mk_sp(comment_lo, comment_lo + BytePos(comment.len() as u32));
+        !out_of_file_lines_range!(context, comment_span)
+    })
+}
+
 impl<'a, 'b, T, I, F1, F2, F3> Iterator for ListItems<'a, 'b, I, F1, F2, F3>
 where
     I: Iterator<Item = T>,
@@ -874,7 +894,12 @@ where
                 let layout_offset = post_snippet
                     .find_uncommented(self.separator)
                     .map_or(0, |offset| offset + self.separator.len());
-                let partial_gap = if next_is_selected {
+                let only_whitespace_is_selected = !is_selected
+                    && !next_is_selected
+                    && !contains_selected_comment(context, post_snippet, hi);
+                let partial_gap = if only_whitespace_is_selected {
+                    Some(PreservedPostSnippet::Complete(post_snippet.to_owned()))
+                } else if next_is_selected {
                     post_snippet.rfind('\n').and_then(|newline| {
                         let prefix_end = newline + 1;
                         if prefix_end < layout_offset {
