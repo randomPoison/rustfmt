@@ -567,6 +567,7 @@ where
             && !last
             && tactic == DefinitiveListTactic::Vertical
             && item.new_lines
+            && item.preserved_post_snippet.is_none()
         {
             item_max_width = None;
             result.push('\n');
