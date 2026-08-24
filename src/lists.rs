@@ -978,9 +978,9 @@ where
                     .find_uncommented(self.separator)
                     .map_or(0, |offset| offset + self.separator.len());
                 let selected_comment_offset = selected_comment_offset(context, post_snippet, hi);
-                let only_whitespace_is_selected =
-                    !is_selected && !next_is_selected && selected_comment_offset.is_none();
-                let partial_gap = if only_whitespace_is_selected {
+                let gap_ends_before_unselected_item =
+                    !next_is_selected && selected_comment_offset.is_none();
+                let partial_gap = if gap_ends_before_unselected_item {
                     Some(PreservedPostSnippet::Complete(
                         normalize_selected_whitespace(context, post_snippet, hi),
                     ))
