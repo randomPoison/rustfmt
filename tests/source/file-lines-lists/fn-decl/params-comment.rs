@@ -1,4 +1,4 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines-lists/params-comment-selected.rs","range":[5,6]}]
+// rustfmt-file_lines: [{"file":"tests/source/file-lines-lists/fn-decl/params-comment.rs","range":[7,7]}]
 
 fn foo(
 first    :    i32,
