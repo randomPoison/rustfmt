@@ -172,7 +172,15 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
                 } else {
                     let shape = self.shape();
                     let rewrite = self.with_context(|ctx| stmt.rewrite(ctx, shape));
-                    self.push_rewrite(stmt.span(), rewrite)
+
+                    // Do not synthesize indentation on an unselected statement-start line when
+                    // a selected subexpression caused the statement itself to be rewritten.
+                    if out_of_file_lines_range!(self, mk_sp(stmt.span().lo(), stmt.span().lo())) {
+                        self.format_missing(source!(self, stmt.span()).lo());
+                        self.push_rewrite_inner(stmt.span(), rewrite);
+                    } else {
+                        self.push_rewrite(stmt.span(), rewrite)
+                    }
                 }
             }
             ast::StmtKind::MacCall(ref mac_stmt) => {

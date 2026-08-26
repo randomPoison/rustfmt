@@ -123,7 +123,11 @@ pub(crate) fn format_expr(
         }
         ast::ExprKind::Call(ref callee, ref args) => {
             let inner_span = mk_sp(callee.span.hi(), expr.span.hi());
-            let callee_str = callee.rewrite_result(context, shape)?;
+            let callee_str = if out_of_file_lines_range!(context, callee.span) {
+                context.snippet(callee.span).to_owned()
+            } else {
+                callee.rewrite_result(context, shape)?
+            };
             rewrite_call(context, &callee_str, args, inner_span, shape)
         }
         ast::ExprKind::Move(ref subexpr, move_kw_span) => {

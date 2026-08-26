@@ -5,7 +5,7 @@ use std::cmp::min;
 use itertools::Itertools;
 use rustc_ast::ast;
 use rustc_ast::token::Delimiter;
-use rustc_span::Span;
+use rustc_span::{BytePos, Span};
 use tracing::debug;
 
 use crate::closures;
@@ -22,7 +22,7 @@ use crate::macros::MacroArg;
 use crate::patterns::{TuplePatField, can_be_overflowed_pat};
 use crate::rewrite::{Rewrite, RewriteContext, RewriteError, RewriteErrorExt, RewriteResult};
 use crate::shape::Shape;
-use crate::source_map::SpanUtils;
+use crate::source_map::{LineRangeUtils, SpanUtils};
 use crate::spanned::Spanned;
 use crate::types::{SegmentParam, can_be_overflowed_type};
 use crate::utils::{count_newlines, extra_offset, first_line_width, last_line_width, mk_sp};
@@ -366,6 +366,11 @@ struct Context<'a> {
     custom_delims: Option<(&'a str, &'a str)>,
 }
 
+struct PreservedPrefix {
+    snippet: String,
+    needs_indent: bool,
+}
+
 impl<'a> Context<'a> {
     fn new<T: 'a + IntoOverflowableItem<'a>>(
         context: &'a RewriteContext<'_>,
@@ -415,6 +420,41 @@ impl<'a> Context<'a> {
             .snippet_provider
             .span_after(self.span, self.prefix);
         mk_sp(span_lo, self.span.hi())
+    }
+
+    fn preserved_prefix(&self) -> Option<PreservedPrefix> {
+        let first_item = self.items.first()?;
+        let items_lo = self.items_span().lo();
+        let context = self.context;
+        let prefix_span = mk_sp(items_lo - BytePos(self.prefix.len() as u32), items_lo);
+        let prefix_is_selected = !out_of_file_lines_range!(context, prefix_span);
+        let first_is_selected = !out_of_file_lines_range!(context, first_item.span());
+        if prefix_is_selected && first_is_selected {
+            return None;
+        }
+
+        let gap = context.snippet(mk_sp(items_lo, first_item.span().lo()));
+        if first_is_selected {
+            gap.rfind('\n').map_or_else(
+                || {
+                    Some(PreservedPrefix {
+                        snippet: gap.to_owned(),
+                        needs_indent: false,
+                    })
+                },
+                |newline| {
+                    Some(PreservedPrefix {
+                        snippet: gap[..=newline].to_owned(),
+                        needs_indent: true,
+                    })
+                },
+            )
+        } else {
+            Some(PreservedPrefix {
+                snippet: gap.to_owned(),
+                needs_indent: false,
+            })
+        }
     }
 
     fn rewrite_last_item_with_overflow(
@@ -486,7 +526,8 @@ impl<'a> Context<'a> {
             && self.items[0].is_expr()
             && !self.items[0].has_attrs()
             && self.ident.len() < self.context.config.tab_spaces();
-        let overflow_last = combine_arg_with_callee || can_be_overflowed(self.context, &self.items);
+        let overflow_last = list_items.last().is_some_and(|item| item.is_selected)
+            && (combine_arg_with_callee || can_be_overflowed(self.context, &self.items));
 
         // Replace the last item with its first line to see if it fits with
         // first arguments.
@@ -562,7 +603,9 @@ impl<'a> Context<'a> {
             (true, DefinitiveListTactic::Horizontal, placeholder @ Some(..)) => {
                 list_items[self.items.len() - 1].item = placeholder.unknown_error();
             }
-            _ if !self.items.is_empty() => {
+            _ if !self.items.is_empty()
+                && list_items.last().is_some_and(|item| item.is_selected) =>
+            {
                 list_items[self.items.len() - 1].item = self
                     .items
                     .last()
@@ -687,6 +730,7 @@ impl<'a> Context<'a> {
             .nested_shape
             .indent
             .to_string_with_newline(self.context.config);
+        let nested_indent = self.nested_shape.indent.to_string(self.context.config);
         let indent_str = shape
             .block()
             .indent
@@ -696,6 +740,17 @@ impl<'a> Context<'a> {
         );
         result.push_str(self.ident);
         result.push_str(prefix);
+        let preserved_prefix = self.preserved_prefix();
+        let push_items_prefix = |result: &mut String| {
+            if let Some(prefix) = preserved_prefix.as_ref() {
+                result.push_str(&prefix.snippet);
+                if prefix.needs_indent {
+                    result.push_str(&nested_indent);
+                }
+            } else {
+                result.push_str(&nested_indent_str);
+            }
+        };
         let force_single_line = if self.context.config.style_edition() >= StyleEdition::Edition2024
         {
             !self.context.use_block_indent() || (is_extendable && extend_width <= shape.width)
@@ -707,13 +762,21 @@ impl<'a> Context<'a> {
                 || (is_extendable && extend_width <= shape.width)
         };
         if force_single_line {
+            if preserved_prefix.is_some() {
+                push_items_prefix(&mut result);
+            }
             result.push_str(items_str);
         } else {
             if !items_str.is_empty() {
-                result.push_str(&nested_indent_str);
+                push_items_prefix(&mut result);
                 result.push_str(items_str);
             }
-            result.push_str(&indent_str);
+            // Keep an unselected closing delimiter attached to the preceding unselected item.
+            let suffix_span = mk_sp(self.span.hi() - BytePos(1), self.span.hi());
+            let context = self.context;
+            if !out_of_file_lines_range!(context, suffix_span) {
+                result.push_str(&indent_str);
+            }
         }
         result.push_str(suffix);
         result
