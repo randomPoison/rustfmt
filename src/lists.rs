@@ -122,6 +122,9 @@ pub(crate) enum ListItemCommentStyle {
 
 #[derive(Debug, Clone)]
 pub(crate) enum PreservedPostSnippet {
+    // An unselected comment before the separator belongs to the preceding item. Keep the
+    // complete suffix through the separator, but continue formatting the gap after it.
+    UnselectedItemSuffix(String),
     // The complete gap up to the next item. No additional layout is needed.
     Complete(String),
     // A gap ending at an unselected item. Keep the original text and defer handling
@@ -141,7 +144,8 @@ pub(crate) enum PreservedPostSnippet {
 impl PreservedPostSnippet {
     fn snippet(&self) -> &str {
         match self {
-            PreservedPostSnippet::Complete(snippet)
+            PreservedPostSnippet::UnselectedItemSuffix(snippet)
+            | PreservedPostSnippet::Complete(snippet)
             | PreservedPostSnippet::LinePrefix(snippet)
             | PreservedPostSnippet::SelectedCommentPrefix(snippet) => snippet,
             PreservedPostSnippet::FileLinesBoundary { snippet, .. } => snippet,
@@ -199,6 +203,10 @@ impl PreservedPostSnippet {
             self,
             PreservedPostSnippet::LinePrefix(_) | PreservedPostSnippet::SelectedCommentPrefix(_)
         )
+    }
+
+    fn preserves_gap(&self) -> bool {
+        !matches!(self, PreservedPostSnippet::UnselectedItemSuffix(_))
     }
 }
 
@@ -652,7 +660,10 @@ where
             && !last
             && tactic == DefinitiveListTactic::Vertical
             && item.new_lines
-            && item.preserved_post_snippet.is_none()
+            && item
+                .preserved_post_snippet
+                .as_ref()
+                .is_none_or(|snippet| !snippet.preserves_gap())
             && !next_item_preserves_newlines
         {
             item_max_width = None;
@@ -661,7 +672,10 @@ where
 
         prev_item_had_post_comment = item.post_comment.is_some();
         prev_item_is_nested_import = inner_item.contains("::");
-        previous_gap_was_preserved = item.preserved_post_snippet.is_some();
+        previous_gap_was_preserved = item
+            .preserved_post_snippet
+            .as_ref()
+            .is_some_and(PreservedPostSnippet::preserves_gap);
         previous_gap_needs_indent = item
             .preserved_post_snippet
             .as_ref()
@@ -1010,7 +1024,23 @@ where
                 let selected_comment_offset = selected_comment_offset(context, post_snippet, hi);
                 let gap_ends_before_unselected_item =
                     !next_is_selected && selected_comment_offset.is_none();
-                let partial_gap = if gap_ends_before_unselected_item {
+                let unselected_item_suffix = (!is_selected && layout_offset > 0)
+                    .then(|| &post_snippet[..layout_offset])
+                    .filter(|suffix| {
+                        CommentCodeSlices::new(suffix)
+                            .any(|(kind, _, _)| kind == CodeCharKind::Comment)
+                    })
+                    .filter(|suffix| {
+                        out_of_file_lines_range!(
+                            context,
+                            mk_sp(hi, hi + BytePos(suffix.len() as u32))
+                        )
+                    });
+                let partial_gap = if let Some(suffix) = unselected_item_suffix {
+                    Some(PreservedPostSnippet::UnselectedItemSuffix(
+                        suffix.to_owned(),
+                    ))
+                } else if gap_ends_before_unselected_item {
                     Some(PreservedPostSnippet::FileLinesBoundary {
                         snippet: post_snippet.to_owned(),
                         selected_lines: selected_lines(context, post_snippet, hi),
@@ -1100,6 +1130,10 @@ where
             };
 
             match preserved_post_snippet.as_ref() {
+                Some(PreservedPostSnippet::UnselectedItemSuffix(suffix)) => {
+                    post_comment = None;
+                    self.prev_span_end = hi + BytePos(suffix.len() as u32);
+                }
                 Some(PreservedPostSnippet::SelectedCommentPrefix(prefix)) => {
                     post_comment = None;
                     self.prev_span_end = hi + BytePos(prefix.len() as u32);
