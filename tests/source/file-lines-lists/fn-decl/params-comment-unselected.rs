@@ -4,7 +4,7 @@ fn foo(
 /* keep me */
 first    :    i32,
         // keep me
-
+    
 // preserve this comment
         second    :    i32,
     selected    :    i32,

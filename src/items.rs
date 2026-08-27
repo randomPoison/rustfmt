@@ -2572,7 +2572,19 @@ fn rewrite_fn_base(
         let pre_param_span = mk_sp(params_span.lo(), span_lo_for_param(first_param));
         let snippet = context.snippet(pre_param_span);
         let mut snippet_lines = context.psess.lookup_line_range(pre_param_span);
-        if snippet.contains('\n') {
+        if count_newlines(snippet) > 1 {
+            // The indentation at the end of the snippet is on the first parameter's line.
+            // `lookup_line_range` also shifts both endpoints when a span starts with a
+            // newline, so decrementing its `hi` by one can still leave that boundary line
+            // in the range when the prefix has complete intervening lines. Those lines,
+            // rather than the parameter's indentation, determine whether to preserve it.
+            snippet_lines.hi = context
+                .psess
+                .line_of_byte_pos(span_lo_for_param(first_param))
+                .saturating_sub(1);
+        } else if snippet.contains('\n') {
+            // With no intervening line, associate the opening newline with the parameter
+            // line so that a selected first parameter still gets formatter-owned layout.
             snippet_lines.hi = snippet_lines.hi.saturating_sub(1);
         }
         if !snippet.is_empty()
@@ -2602,10 +2614,17 @@ fn rewrite_fn_base(
             params_span.hi(),
         )
     });
+    // The list no longer sees a preserved multiline prefix after it is removed from the
+    // itemization span, so carry that layout constraint into tactic selection explicitly.
+    let rewrite_one_line_budget = if preserved_pre_param_snippet.is_some_and(|s| s.contains('\n')) {
+        0
+    } else {
+        one_line_budget
+    };
     let param_str = rewrite_params(
         context,
         &fd.inputs,
-        one_line_budget,
+        rewrite_one_line_budget,
         multi_line_budget,
         indent,
         param_indent,

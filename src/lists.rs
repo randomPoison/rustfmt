@@ -1036,15 +1036,19 @@ where
                             mk_sp(hi, hi + BytePos(suffix.len() as u32))
                         )
                     });
-                let partial_gap = if let Some(suffix) = unselected_item_suffix {
-                    Some(PreservedPostSnippet::UnselectedItemSuffix(
-                        suffix.to_owned(),
-                    ))
-                } else if gap_ends_before_unselected_item {
+                let partial_gap = if gap_ends_before_unselected_item {
+                    // When both sides of the gap are unselected and it contains no selected
+                    // comment, preserve the whole gap. In particular, do this before handling
+                    // an unselected pre-separator comment as a partial suffix; otherwise the
+                    // remainder is re-extracted as the next item's pre-comment and rewritten.
                     Some(PreservedPostSnippet::FileLinesBoundary {
                         snippet: post_snippet.to_owned(),
                         selected_lines: selected_lines(context, post_snippet, hi),
                     })
+                } else if let Some(suffix) = unselected_item_suffix {
+                    Some(PreservedPostSnippet::UnselectedItemSuffix(
+                        suffix.to_owned(),
+                    ))
                 } else if let Some(comment_offset) =
                     selected_comment_offset.filter(|&offset| offset >= layout_offset)
                 {
