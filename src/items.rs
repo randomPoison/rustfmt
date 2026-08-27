@@ -2561,6 +2561,13 @@ fn rewrite_fn_base(
             .span_after(mk_sp(fn_sig.generics.span.hi(), span.hi()), "("),
         params_end,
     );
+    let close_paren_is_selected =
+        !out_of_file_lines_range!(context, mk_sp(params_end - BytePos(1), params_end));
+    let close_paren_was_on_separate_line = fd.inputs.last().is_some_and(|last_param| {
+        context
+            .snippet(mk_sp(last_param.ty.span.hi(), params_end - BytePos(1)))
+            .contains('\n')
+    });
     let preserved_pre_param_snippet = fd.inputs.first().and_then(|first_param| {
         let pre_param_span = mk_sp(params_span.lo(), span_lo_for_param(first_param));
         let snippet = context.snippet(pre_param_span);
@@ -2617,13 +2624,17 @@ fn rewrite_fn_base(
     if let Some(pre_param_snippet) = preserved_pre_param_snippet {
         result.push_str(pre_param_snippet);
         result.push_str(&param_str);
-        result.push_str(&indent.to_string_with_newline(context.config));
+        if close_paren_is_selected || close_paren_was_on_separate_line {
+            result.push_str(&indent.to_string_with_newline(context.config));
+        }
         result.push(')');
     } else if put_params_in_block {
         param_indent = indent.block_indent(context.config);
         result.push_str(&param_indent.to_string_with_newline(context.config));
         result.push_str(&param_str);
-        result.push_str(&indent.to_string_with_newline(context.config));
+        if close_paren_is_selected || close_paren_was_on_separate_line {
+            result.push_str(&indent.to_string_with_newline(context.config));
+        }
         result.push(')');
     } else {
         result.push_str(&param_str);
