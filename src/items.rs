@@ -2569,7 +2569,6 @@ fn rewrite_fn_base(
             snippet_lines.hi = snippet_lines.hi.saturating_sub(1);
         }
         if !snippet.is_empty()
-            && !contains_comment(snippet)
             && !context.config.file_lines().is_all()
             && !context.config.file_lines().intersects(&snippet_lines)
         {
@@ -2588,6 +2587,14 @@ fn rewrite_fn_base(
         result.push_str(&param_indent.to_string_with_newline(context.config));
     }
 
+    // A preserved prefix is emitted by the function-declaration writer, so keep the list
+    // itemizer from extracting and rewriting any comments from it a second time.
+    let rewrite_params_span = preserved_pre_param_snippet.map_or(params_span, |first_param| {
+        mk_sp(
+            params_span.lo() + BytePos(first_param.len() as u32),
+            params_span.hi(),
+        )
+    });
     let param_str = rewrite_params(
         context,
         &fd.inputs,
@@ -2595,7 +2602,7 @@ fn rewrite_fn_base(
         multi_line_budget,
         indent,
         param_indent,
-        params_span,
+        rewrite_params_span,
         fd.c_variadic(),
     )?;
 
