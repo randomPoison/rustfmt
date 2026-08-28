@@ -1,4 +1,4 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines-lists/fn-decl/params-unselected-trailing-whitespace.rs","range":[13,13]}]
+// rustfmt-file_lines: [{"file":"tests/source/file-lines-lists/fn-decl-comments/params-unselected-trailing-whitespace.rs","range":[13,13]}]
 
 fn foo(
     // leading comment  

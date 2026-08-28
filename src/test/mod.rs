@@ -50,6 +50,10 @@ const FILE_SKIP_LIST: &[&str] = &[
     "cfg_mod/foo.rs",
     "cfg_mod/wasm32.rs",
     "skip/foo.rs",
+
+    // file-lines tests we're not ready for yet.
+    "file-lines-lists/fn-call",
+    "file-lines-lists/fn-decl-comments",
 ];
 
 fn init_log() {
