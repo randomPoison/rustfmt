@@ -6,5 +6,5 @@
 fn foo(  
     first: i32,
     selected: i32,
-    last: i32
+    last: i32,
 ) {}
