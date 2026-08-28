@@ -1013,8 +1013,17 @@ where
             let mut post_comment =
                 extract_post_comment(post_snippet, comment_end, self.separator, is_last);
 
-            let preserved_post_snippet = if is_last || post_snippet.is_empty() {
+            let preserved_post_snippet = if post_snippet.is_empty() {
                 None
+            } else if is_last {
+                let suffix = &post_snippet[..comment_end];
+                (!is_selected
+                    && !suffix.is_empty()
+                    && out_of_file_lines_range!(
+                        context,
+                        mk_sp(hi, hi + BytePos(suffix.len() as u32))
+                    ))
+                .then(|| PreservedPostSnippet::Complete(suffix.to_owned()))
             } else {
                 // The separator belongs to the preceding item. Test only the layout after it,
                 // but preserve the complete gap.

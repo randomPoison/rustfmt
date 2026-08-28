@@ -2569,31 +2569,43 @@ fn rewrite_fn_base(
             .contains('\n')
     });
     let preserved_pre_param_snippet = fd.inputs.first().and_then(|first_param| {
-        let pre_param_span = mk_sp(params_span.lo(), span_lo_for_param(first_param));
+        let first_param_lo = span_lo_for_param(first_param);
+        let pre_param_span = mk_sp(params_span.lo(), first_param_lo);
         let snippet = context.snippet(pre_param_span);
-        let mut snippet_lines = context.psess.lookup_line_range(pre_param_span);
-        if count_newlines(snippet) > 1 {
-            // The indentation at the end of the snippet is on the first parameter's line.
-            // `lookup_line_range` also shifts both endpoints when a span starts with a
-            // newline, so decrementing its `hi` by one can still leave that boundary line
-            // in the range when the prefix has complete intervening lines. Those lines,
-            // rather than the parameter's indentation, determine whether to preserve it.
-            snippet_lines.hi = context
-                .psess
-                .line_of_byte_pos(span_lo_for_param(first_param))
-                .saturating_sub(1);
-        } else if snippet.contains('\n') {
-            // With no intervening line, associate the opening newline with the parameter
-            // line so that a selected first parameter still gets formatter-owned layout.
-            snippet_lines.hi = snippet_lines.hi.saturating_sub(1);
-        }
-        if !snippet.is_empty()
-            && !context.config.file_lines().is_all()
-            && !context.config.file_lines().intersects(&snippet_lines)
-        {
-            Some(snippet)
-        } else {
+        let is_unselected = |snippet: &str, lo| {
+            let mut snippet_lines = context.psess.lookup_line_range(mk_sp(lo, first_param_lo));
+            if count_newlines(snippet) > 1 {
+                // The indentation at the end of the snippet is on the first parameter's line.
+                // `lookup_line_range` also shifts both endpoints when a span starts with a
+                // newline, so decrementing its `hi` by one can still leave that boundary line
+                // in the range when the prefix has complete intervening lines. Those lines,
+                // rather than the parameter's indentation, determine whether to preserve it.
+                snippet_lines.hi = context
+                    .psess
+                    .line_of_byte_pos(first_param_lo)
+                    .saturating_sub(1);
+            } else if snippet.contains('\n') {
+                // With no intervening line, associate the opening newline with the parameter
+                // line so that a selected first parameter still gets formatter-owned layout.
+                snippet_lines.hi = snippet_lines.hi.saturating_sub(1);
+            }
+            !context.config.file_lines().intersects(&snippet_lines)
+        };
+
+        if snippet.is_empty() || context.config.file_lines().is_all() {
             None
+        } else if is_unselected(snippet, pre_param_span.lo()) {
+            Some(snippet.to_owned())
+        } else {
+            // The opening line can be selected independently of the first parameter. Format
+            // its whitespace after `(`, but preserve an unselected suffix starting at the
+            // newline so comments and the first parameter keep their original layout.
+            snippet.find('\n').and_then(|newline| {
+                let suffix = &snippet[newline..];
+                (snippet[..newline].chars().all(char::is_whitespace)
+                    && is_unselected(suffix, pre_param_span.lo() + BytePos(newline as u32)))
+                .then(|| suffix.to_owned())
+            })
         }
     });
 
@@ -2608,15 +2620,17 @@ fn rewrite_fn_base(
 
     // A preserved prefix is emitted by the function-declaration writer, so keep the list
     // itemizer from extracting and rewriting any comments from it a second time.
-    let rewrite_params_span = preserved_pre_param_snippet.map_or(params_span, |first_param| {
-        mk_sp(
-            params_span.lo() + BytePos(first_param.len() as u32),
-            params_span.hi(),
-        )
-    });
+    let rewrite_params_span = preserved_pre_param_snippet
+        .as_ref()
+        .map_or(params_span, |_| {
+            mk_sp(span_lo_for_param(&fd.inputs[0]), params_span.hi())
+        });
     // The list no longer sees a preserved multiline prefix after it is removed from the
     // itemization span, so carry that layout constraint into tactic selection explicitly.
-    let rewrite_one_line_budget = if preserved_pre_param_snippet.is_some_and(|s| s.contains('\n')) {
+    let rewrite_one_line_budget = if preserved_pre_param_snippet
+        .as_deref()
+        .is_some_and(|s| s.contains('\n'))
+    {
         0
     } else {
         one_line_budget
@@ -2639,11 +2653,17 @@ fn rewrite_fn_base(
 
     let mut params_last_line_contains_comment = false;
     let mut no_params_and_over_max_width = false;
+    let params_position_close_paren = param_str.contains('\n')
+        && param_str
+            .rsplit_once('\n')
+            .is_some_and(|(_, suffix)| suffix.trim().is_empty());
 
     if let Some(pre_param_snippet) = preserved_pre_param_snippet {
-        result.push_str(pre_param_snippet);
+        result.push_str(&pre_param_snippet);
         result.push_str(&param_str);
-        if close_paren_is_selected || close_paren_was_on_separate_line {
+        if close_paren_is_selected
+            || (close_paren_was_on_separate_line && !params_position_close_paren)
+        {
             result.push_str(&indent.to_string_with_newline(context.config));
         }
         result.push(')');
@@ -2651,7 +2671,9 @@ fn rewrite_fn_base(
         param_indent = indent.block_indent(context.config);
         result.push_str(&param_indent.to_string_with_newline(context.config));
         result.push_str(&param_str);
-        if close_paren_is_selected || close_paren_was_on_separate_line {
+        if close_paren_is_selected
+            || (close_paren_was_on_separate_line && !params_position_close_paren)
+        {
             result.push_str(&indent.to_string_with_newline(context.config));
         }
         result.push(')');
