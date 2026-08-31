@@ -10,6 +10,7 @@ use crate::config::lists::*;
 use crate::config::{Config, IndentStyle};
 use crate::rewrite::{ExceedsMaxWidthError, RewriteContext, RewriteError, RewriteResult};
 use crate::shape::{Indent, Shape};
+use crate::source_map::LineRangeUtils;
 use crate::utils::{
     count_newlines, first_line_width, last_line_width, mk_sp, starts_with_newline,
     unicode_str_width,
@@ -281,7 +282,11 @@ where
 }
 
 // Format a list of commented items into a string.
-pub(crate) fn write_list<I, T>(items: I, formatting: &ListFormatting<'_>) -> RewriteResult
+pub(crate) fn write_list<I, T>(
+    context: &RewriteContext<'_>,
+    items: I,
+    formatting: &ListFormatting<'_>,
+) -> RewriteResult
 where
     I: IntoIterator<Item = T> + Clone,
     T: AsRef<ListItem>,
@@ -305,7 +310,10 @@ where
     let indent_str = &formatting.shape.indent.to_string(formatting.config);
     while let Some((i, item)) = iter.next() {
         let item = item.as_ref();
-        let inner_item = item.item.as_ref().or_else(|err| Err(err.clone()))?;
+        let inner_item = match item.span {
+            Some(span) if out_of_file_lines_range!(context, span) => context.snippet(span),
+            _ => item.item.as_ref().or_else(|err| Err(err.clone()))?,
+        };
         let first = i == 0;
         let last = iter.peek().is_none();
         let mut separate = match sep_place {
