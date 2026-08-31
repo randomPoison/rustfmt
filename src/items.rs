@@ -2893,15 +2893,29 @@ fn rewrite_params(
     )
     .collect();
 
-    let tactic = definitive_tactic(
-        &param_items,
-        context
-            .config
-            .fn_params_layout()
-            .to_list_tactic(context.config.style_edition(), param_items.len()),
-        Separator::Comma,
-        one_line_budget,
-    );
+    let list_span = mk_sp(span.lo() - BytePos(1), span.hi());
+    let list_line_range = context.psess.lookup_line_range(list_span);
+    let file_lines = context.config.file_lines();
+    let fully_selected = file_lines.contains(&list_line_range);
+
+    // A partially selected list must remain vertical so formatting selected
+    // parameters does not pull unselected parameters onto different lines.
+    // Include the opening parenthesis in the range; `span` starts immediately
+    // after it and already includes the closing parenthesis.
+    let tactic = if !fully_selected {
+        DefinitiveListTactic::Vertical
+    } else {
+        definitive_tactic(
+            &param_items,
+            context
+                .config
+                .fn_params_layout()
+                .to_list_tactic(context.config.style_edition(), param_items.len()),
+            Separator::Comma,
+            one_line_budget,
+        )
+    };
+
     let budget = match tactic {
         DefinitiveListTactic::Horizontal => one_line_budget,
         _ => multi_line_budget,
