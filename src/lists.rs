@@ -119,7 +119,21 @@ pub(crate) enum ListItemCommentStyle {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Captured for file-lines-aware list rendering.
+pub(crate) struct ListItemSourceSnippet {
+    pub(crate) span: Span,
+    pub(crate) snippet: String,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct ListItem {
+    // Source information is populated for items produced by `itemize_list`.
+    #[allow(dead_code)] // Captured for file-lines-aware list rendering.
+    pub(crate) span: Option<Span>,
+    #[allow(dead_code)] // Captured for file-lines-aware list rendering.
+    pub(crate) pre_snippet: Option<ListItemSourceSnippet>,
+    #[allow(dead_code)] // Captured for file-lines-aware list rendering.
+    pub(crate) post_snippet: Option<ListItemSourceSnippet>,
     // None for comments mean that they are not present.
     pub(crate) pre_comment: Option<String>,
     pub(crate) pre_comment_style: ListItemCommentStyle,
@@ -134,6 +148,9 @@ pub(crate) struct ListItem {
 impl ListItem {
     pub(crate) fn from_item(item: RewriteResult) -> ListItem {
         ListItem {
+            span: None,
+            pre_snippet: None,
+            post_snippet: None,
             pre_comment: None,
             pre_comment_style: ListItemCommentStyle::None,
             item: item,
@@ -183,6 +200,9 @@ impl ListItem {
 
     pub(crate) fn from_str<S: Into<String>>(s: S) -> ListItem {
         ListItem {
+            span: None,
+            pre_snippet: None,
+            post_snippet: None,
             pre_comment: None,
             pre_comment_style: ListItemCommentStyle::None,
             item: Ok(s.into()),
@@ -751,10 +771,15 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next().map(|item| {
+            let lo = (self.get_lo)(&item);
+            let hi = (self.get_hi)(&item);
+            let span = mk_sp(lo, hi);
+
             // Pre-comment
+            let pre_snippet_span = mk_sp(self.prev_span_end, lo);
             let pre_snippet = self
                 .snippet_provider
-                .span_to_snippet(mk_sp(self.prev_span_end, (self.get_lo)(&item)))
+                .span_to_snippet(pre_snippet_span)
                 .unwrap_or("");
             let (pre_comment, pre_comment_style) = extract_pre_comment(pre_snippet);
 
@@ -763,9 +788,10 @@ where
                 Some(next_item) => (self.get_lo)(next_item),
                 None => self.next_span_start,
             };
+            let post_snippet_span = mk_sp(hi, next_start);
             let post_snippet = self
                 .snippet_provider
-                .span_to_snippet(mk_sp((self.get_hi)(&item), next_start))
+                .span_to_snippet(post_snippet_span)
                 .unwrap_or("");
             let is_last = self.inner.peek().is_none();
             let comment_end =
@@ -774,11 +800,23 @@ where
             let post_comment =
                 extract_post_comment(post_snippet, comment_end, self.separator, is_last);
 
-            self.prev_span_end = (self.get_hi)(&item) + BytePos(comment_end as u32);
+            self.prev_span_end = hi + BytePos(comment_end as u32);
 
             ListItem {
+                span: Some(span),
+                pre_snippet: Some(ListItemSourceSnippet {
+                    span: pre_snippet_span,
+                    snippet: pre_snippet.to_owned(),
+                }),
+                post_snippet: Some(ListItemSourceSnippet {
+                    span: post_snippet_span,
+                    snippet: post_snippet.to_owned(),
+                }),
+
+                // TODO: We need to capture spans for the comments too.
                 pre_comment,
                 pre_comment_style,
+
                 // leave_last is set to true only for rewrite_items
                 item: if self.inner.peek().is_none() && self.leave_last {
                     Err(RewriteError::SkipFormatting)
