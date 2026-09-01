@@ -796,19 +796,22 @@ where
                 Some(next_item) => (self.get_lo)(next_item),
                 None => self.next_span_start,
             };
-            let post_snippet_span = mk_sp(hi, next_start);
-            let post_snippet = self
+            let post_item_span = mk_sp(hi, next_start);
+            let post_item_snippet = self
                 .snippet_provider
-                .span_to_snippet(post_snippet_span)
+                .span_to_snippet(post_item_span)
                 .unwrap_or("");
             let is_last = self.inner.peek().is_none();
             let comment_end =
-                get_comment_end(post_snippet, self.separator, self.terminator, is_last);
-            let new_lines = has_extra_newline(post_snippet, comment_end);
+                get_comment_end(post_item_snippet, self.separator, self.terminator, is_last);
+            let new_lines = has_extra_newline(post_item_snippet, comment_end);
             let post_comment =
-                extract_post_comment(post_snippet, comment_end, self.separator, is_last);
+                extract_post_comment(post_item_snippet, comment_end, self.separator, is_last);
 
-            self.prev_span_end = hi + BytePos(comment_end as u32);
+            let post_snippet_end = hi + BytePos(comment_end as u32);
+            let post_snippet_span = mk_sp(hi, post_snippet_end);
+            let post_snippet = &post_item_snippet[..comment_end];
+            self.prev_span_end = post_snippet_end;
 
             ListItem {
                 span: Some(span),
