@@ -6,9 +6,8 @@ use std::iter::Peekable;
 use rustc_span::{BytePos, Span};
 
 use crate::comment::{FindUncommented, find_comment_end, rewrite_comment};
+use crate::config::IndentStyle;
 use crate::config::lists::*;
-use crate::config::{Config, IndentStyle};
-use crate::parse::session::ParseSess;
 use crate::rewrite::{ExceedsMaxWidthError, RewriteContext, RewriteError, RewriteResult};
 use crate::shape::{Indent, Shape};
 use crate::source_map::LineRangeUtils;
@@ -33,9 +32,7 @@ pub(crate) struct ListFormatting<'a> {
     nested: bool,
     // Whether comments should be visually aligned.
     align_comments: bool,
-    config: &'a Config,
-    psess: &'a ParseSess,
-    snippet_provider: &'a SnippetProvider,
+    context: &'a RewriteContext<'a>,
 }
 
 impl<'a> ListFormatting<'a> {
@@ -50,9 +47,7 @@ impl<'a> ListFormatting<'a> {
             preserve_newline: false,
             nested: false,
             align_comments: true,
-            config: context.config,
-            psess: context.psess,
-            snippet_provider: context.snippet_provider,
+            context,
         }
     }
 
@@ -291,14 +286,15 @@ where
     let mut prev_item_is_nested_import = false;
 
     let mut line_len = 0;
-    let indent_str = &formatting.shape.indent.to_string(formatting.config);
+    let indent_str = &formatting.shape.indent.to_string(formatting.context.config);
     while let Some((i, item)) = iter.next() {
         let item = item.as_ref();
 
         // Check the span for the item to determine if we can rewrite it. If not covered
         // by the file-lines selection, we emit the original snippet verbatim.
+        let context = formatting.context;
         let inner_item = match item.span {
-            Some(span) if out_of_file_lines_range!(formatting, span) => formatting
+            Some(span) if out_of_file_lines_range!(context, span) => context
                 .snippet_provider
                 .span_to_snippet(span)
                 .expect("List item must have source snippet"),
@@ -385,15 +381,19 @@ where
             // Block style in non-vertical mode.
             let block_mode = tactic == DefinitiveListTactic::Horizontal;
             // Width restriction is only relevant in vertical mode.
-            let comment =
-                rewrite_comment(comment, block_mode, formatting.shape, formatting.config)?;
+            let comment = rewrite_comment(
+                comment,
+                block_mode,
+                formatting.shape,
+                formatting.context.config,
+            )?;
             result.push_str(&comment);
 
             if !inner_item.is_empty() {
                 use DefinitiveListTactic::*;
                 if matches!(tactic, Vertical | Mixed | SpecialMacro(_)) {
                     // We cannot keep pre-comments on the same line if the comment is normalized.
-                    let keep_comment = if formatting.config.normalize_comments()
+                    let keep_comment = if formatting.context.config.normalize_comments()
                         || item.pre_comment_style == ListItemCommentStyle::DifferentLine
                     {
                         false
@@ -431,7 +431,7 @@ where
                 comment,
                 true,
                 Shape::legacy(formatting.shape.width, Indent::empty()),
-                formatting.config,
+                formatting.context.config,
             )?;
 
             result.push(' ');
@@ -452,7 +452,7 @@ where
                         &cloned_items,
                         i,
                         overhead,
-                        formatting.config.max_width(),
+                        formatting.context.config.max_width(),
                     ));
                 }
                 let overhead = if starts_with_newline(comment) {
@@ -479,7 +479,7 @@ where
                     comment.trim_start(),
                     block_style,
                     comment_shape,
-                    formatting.config,
+                    formatting.context.config,
                 )
             };
 
@@ -493,7 +493,7 @@ where
                         + last_line_width(&result)
                         + comment_alignment
                         + 1
-                        > formatting.config.max_width()
+                        > formatting.context.config.max_width()
                     {
                         item_max_width = None;
                         formatted_comment = rewrite_post_comment(&mut item_max_width)?;
@@ -968,8 +968,6 @@ pub(crate) fn struct_lit_formatting<'a>(
         preserve_newline: true,
         nested: false,
         align_comments: true,
-        config: context.config,
-        psess: context.psess,
-        snippet_provider: context.snippet_provider,
+        context,
     }
 }
