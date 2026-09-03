@@ -8,8 +8,10 @@ use rustc_span::{BytePos, Span};
 use crate::comment::{FindUncommented, find_comment_end, rewrite_comment};
 use crate::config::lists::*;
 use crate::config::{Config, IndentStyle};
+use crate::parse::session::ParseSess;
 use crate::rewrite::{ExceedsMaxWidthError, RewriteContext, RewriteError, RewriteResult};
 use crate::shape::{Indent, Shape};
+use crate::source_map::LineRangeUtils;
 use crate::utils::{
     count_newlines, first_line_width, last_line_width, mk_sp, starts_with_newline,
     unicode_str_width,
@@ -32,10 +34,12 @@ pub(crate) struct ListFormatting<'a> {
     // Whether comments should be visually aligned.
     align_comments: bool,
     config: &'a Config,
+    psess: &'a ParseSess,
+    snippet_provider: &'a SnippetProvider,
 }
 
 impl<'a> ListFormatting<'a> {
-    pub(crate) fn new(shape: Shape, config: &'a Config) -> Self {
+    pub(crate) fn new(shape: Shape, context: &'a RewriteContext<'_>) -> Self {
         ListFormatting {
             tactic: DefinitiveListTactic::Vertical,
             separator: ",",
@@ -46,7 +50,9 @@ impl<'a> ListFormatting<'a> {
             preserve_newline: false,
             nested: false,
             align_comments: true,
-            config,
+            config: context.config,
+            psess: context.psess,
+            snippet_provider: context.snippet_provider,
         }
     }
 
@@ -126,6 +132,7 @@ pub(crate) struct ListItem {
     // Item should include attributes and doc comments. None indicates a failed
     // rewrite.
     pub(crate) item: RewriteResult,
+    pub(crate) span: Option<Span>,
     pub(crate) post_comment: Option<String>,
     // Whether there is extra whitespace before this item.
     pub(crate) new_lines: bool,
@@ -137,6 +144,7 @@ impl ListItem {
             pre_comment: None,
             pre_comment_style: ListItemCommentStyle::None,
             item: item,
+            span: None,
             post_comment: None,
             new_lines: false,
         }
@@ -186,6 +194,7 @@ impl ListItem {
             pre_comment: None,
             pre_comment_style: ListItemCommentStyle::None,
             item: Ok(s.into()),
+            span: None,
             post_comment: None,
             new_lines: false,
         }
@@ -285,7 +294,17 @@ where
     let indent_str = &formatting.shape.indent.to_string(formatting.config);
     while let Some((i, item)) = iter.next() {
         let item = item.as_ref();
-        let inner_item = item.item.as_ref().or_else(|err| Err(err.clone()))?;
+
+        // Check the span for the item to determine if we can rewrite it. If not covered
+        // by the file-lines selection, we emit the original snippet verbatim.
+        let inner_item = match item.span {
+            Some(span) if out_of_file_lines_range!(formatting, span) => formatting
+                .snippet_provider
+                .span_to_snippet(span)
+                .expect("List item must have source snippet"),
+            _ => item.item.as_ref().or_else(|err| Err(err.clone()))?,
+        };
+
         let first = i == 0;
         let last = iter.peek().is_none();
         let mut separate = match sep_place {
@@ -751,10 +770,13 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.next().map(|item| {
+            let lo = (self.get_lo)(&item);
+            let hi = (self.get_hi)(&item);
+
             // Pre-comment
             let pre_snippet = self
                 .snippet_provider
-                .span_to_snippet(mk_sp(self.prev_span_end, (self.get_lo)(&item)))
+                .span_to_snippet(mk_sp(self.prev_span_end, lo))
                 .unwrap_or("");
             let (pre_comment, pre_comment_style) = extract_pre_comment(pre_snippet);
 
@@ -765,7 +787,7 @@ where
             };
             let post_snippet = self
                 .snippet_provider
-                .span_to_snippet(mk_sp((self.get_hi)(&item), next_start))
+                .span_to_snippet(mk_sp(hi, next_start))
                 .unwrap_or("");
             let is_last = self.inner.peek().is_none();
             let comment_end =
@@ -774,7 +796,7 @@ where
             let post_comment =
                 extract_post_comment(post_snippet, comment_end, self.separator, is_last);
 
-            self.prev_span_end = (self.get_hi)(&item) + BytePos(comment_end as u32);
+            self.prev_span_end = hi + BytePos(comment_end as u32);
 
             ListItem {
                 pre_comment,
@@ -785,6 +807,7 @@ where
                 } else {
                     (self.get_item_string)(&item)
                 },
+                span: Some(mk_sp(lo, hi)),
                 post_comment,
                 new_lines,
             }
@@ -946,5 +969,7 @@ pub(crate) fn struct_lit_formatting<'a>(
         nested: false,
         align_comments: true,
         config: context.config,
+        psess: context.psess,
+        snippet_provider: context.snippet_provider,
     }
 }

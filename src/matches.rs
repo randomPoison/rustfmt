@@ -238,7 +238,7 @@ fn rewrite_match_arms(
     );
     let arms_vec: Vec<_> = items.collect();
     // We will add/remove commas inside `arm.rewrite()`, and hence no separator here.
-    let fmt = ListFormatting::new(arm_shape, context.config)
+    let fmt = ListFormatting::new(arm_shape, context)
         .separator("")
         .preserve_newline(true);
 

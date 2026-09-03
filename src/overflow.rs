@@ -658,7 +658,7 @@ impl<'a> Context<'a> {
             _ => false,
         };
 
-        let fmt = ListFormatting::new(self.nested_shape, self.context.config)
+        let fmt = ListFormatting::new(self.nested_shape, self.context)
             .tactic(tactic)
             .trailing_separator(trailing_separator)
             .ends_with_newline(ends_with_newline);

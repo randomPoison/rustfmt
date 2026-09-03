@@ -262,7 +262,7 @@ fn rewrite_aligned_items_inner<T: AlignedItem>(
         context.config.trailing_comma()
     };
 
-    let fmt = ListFormatting::new(item_shape, context.config)
+    let fmt = ListFormatting::new(item_shape, context)
         .tactic(tactic)
         .trailing_separator(separator_tactic)
         .preserve_newline(true);

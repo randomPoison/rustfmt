@@ -332,7 +332,7 @@ fn rewrite_closure_fn_decl(
         _ => param_shape,
     };
 
-    let fmt = ListFormatting::new(param_shape, context.config)
+    let fmt = ListFormatting::new(param_shape, context)
         .tactic(tactic)
         .preserve_newline(true);
     let list_str = write_list(&item_vec, &fmt)?;

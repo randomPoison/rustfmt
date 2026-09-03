@@ -395,7 +395,7 @@ fn format_function_type(
             context.config.trailing_comma()
         };
 
-        let fmt = ListFormatting::new(list_shape, context.config)
+        let fmt = ListFormatting::new(list_shape, context)
             .tactic(tactic)
             .trailing_separator(trailing_separator)
             .ends_with_newline(tactic.ends_with_newline(context.config.indent_style()))

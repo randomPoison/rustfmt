@@ -1059,7 +1059,7 @@ fn rewrite_nested_use_tree(
     } else {
         SeparatorTactic::Never
     };
-    let fmt = ListFormatting::new(nested_shape, context.config)
+    let fmt = ListFormatting::new(nested_shape, context)
         .tactic(tactic)
         .trailing_separator(trailing_separator)
         .ends_with_newline(ends_with_newline)

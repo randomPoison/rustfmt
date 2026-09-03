@@ -2039,7 +2039,7 @@ fn rewrite_tuple_in_visual_indent_style<'a, T: 'a + IntoOverflowableItem<'a>>(
         Separator::Comma,
         nested_shape.width,
     );
-    let fmt = ListFormatting::new(nested_shape, context.config)
+    let fmt = ListFormatting::new(nested_shape, context)
         .tactic(tactic)
         .ends_with_newline(false);
     let list_str = write_list(&item_vec, &fmt)?;

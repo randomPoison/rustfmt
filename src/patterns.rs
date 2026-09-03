@@ -106,7 +106,7 @@ impl Rewrite for Pat {
                         shape.width,
                     )
                 };
-                let fmt = ListFormatting::new(shape, context.config)
+                let fmt = ListFormatting::new(shape, context)
                     .tactic(tactic)
                     .separator(" |")
                     .separator_place(context.config.binop_separator())

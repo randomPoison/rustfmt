@@ -644,7 +644,8 @@ impl<'a> FmtVisitor<'a> {
         }
 
         let shape = self.shape().sub_width_opt(2)?;
-        let fmt = ListFormatting::new(shape, self.config)
+        let context = self.get_context();
+        let fmt = ListFormatting::new(shape, &context)
             .trailing_separator(self.config.trailing_comma())
             .preserve_newline(true);
 
@@ -2918,7 +2919,7 @@ fn rewrite_params(
             IndentStyle::Visual => SeparatorTactic::Never,
         }
     };
-    let fmt = ListFormatting::new(Shape::legacy(budget, indent), context.config)
+    let fmt = ListFormatting::new(Shape::legacy(budget, indent), context)
         .tactic(tactic)
         .trailing_separator(trailing_separator)
         .ends_with_newline(tactic.ends_with_newline(context.config.indent_style()))
@@ -3181,7 +3182,7 @@ fn rewrite_bounds_on_where_clause(
 
     let preserve_newline = context.config.style_edition() <= StyleEdition::Edition2021;
 
-    let fmt = ListFormatting::new(shape, context.config)
+    let fmt = ListFormatting::new(shape, context)
         .tactic(shape_tactic)
         .trailing_separator(comma_tactic)
         .preserve_newline(preserve_newline);
@@ -3261,7 +3262,7 @@ fn rewrite_where_clause(
         comma_tactic = SeparatorTactic::Never;
     }
 
-    let fmt = ListFormatting::new(Shape::legacy(budget, offset), context.config)
+    let fmt = ListFormatting::new(Shape::legacy(budget, offset), context)
         .tactic(tactic)
         .trailing_separator(comma_tactic)
         .ends_with_newline(tactic.ends_with_newline(context.config.indent_style()))

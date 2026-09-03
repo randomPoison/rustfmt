@@ -509,7 +509,7 @@ pub(crate) fn rewrite_macro_def(
     )
     .collect::<Vec<_>>();
 
-    let fmt = ListFormatting::new(arm_shape, context.config)
+    let fmt = ListFormatting::new(arm_shape, context)
         .separator(if def.macro_rules { ";" } else { "" })
         .trailing_separator(SeparatorTactic::Always)
         .preserve_newline(true);
@@ -1655,7 +1655,7 @@ fn format_cfg_select(
     let arms_vec: Vec<_> = items.collect();
 
     // We will add/remove commas inside `arm.rewrite()`, and hence no separator here.
-    let fmt = ListFormatting::new(nested_shape, context.config)
+    let fmt = ListFormatting::new(nested_shape, context)
         .separator("")
         .align_comments(false)
         .preserve_newline(true);

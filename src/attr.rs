@@ -143,7 +143,7 @@ fn format_derive(
     };
 
     // Format the collection of items.
-    let fmt = ListFormatting::new(argument_shape, context.config)
+    let fmt = ListFormatting::new(argument_shape, context)
         .tactic(tactic)
         .trailing_separator(trailing_separator)
         .ends_with_newline(false);
