@@ -16,7 +16,7 @@ use crate::expr::{
 use crate::lists::{ListFormatting, itemize_list, write_list};
 use crate::rewrite::{Rewrite, RewriteContext, RewriteError, RewriteErrorExt, RewriteResult};
 use crate::shape::Shape;
-use crate::source_map::SpanUtils;
+use crate::source_map::{LineRangeUtils, SpanUtils};
 use crate::spanned::Spanned;
 use crate::utils::{
     contains_skip, extra_offset, first_line_width, inner_attributes, last_line_extendable, mk_sp,
@@ -31,14 +31,22 @@ struct ArmWrapper<'a> {
     is_last: bool,
     /// Holds a byte position of `|` at the beginning of the arm pattern, if available.
     beginning_vert: Option<BytePos>,
+    /// Start of the next arm, or the end of the match for the last arm.
+    next_pos: BytePos,
 }
 
 impl<'a> ArmWrapper<'a> {
-    fn new(arm: &'a ast::Arm, is_last: bool, beginning_vert: Option<BytePos>) -> ArmWrapper<'a> {
+    fn new(
+        arm: &'a ast::Arm,
+        is_last: bool,
+        beginning_vert: Option<BytePos>,
+        next_pos: BytePos,
+    ) -> ArmWrapper<'a> {
         ArmWrapper {
             arm,
             is_last,
             beginning_vert,
+            next_pos,
         }
     }
 }
@@ -66,6 +74,8 @@ impl<'a> Rewrite for ArmWrapper<'a> {
             shape,
             self.is_last,
             self.beginning_vert.is_some(),
+            self.span(),
+            self.next_pos,
         )
     }
 }
@@ -79,6 +89,8 @@ pub(crate) fn rewrite_match(
     attrs: &[ast::Attribute],
     match_kind: MatchKind,
 ) -> RewriteResult {
+    skip_out_of_file_lines_range_err!(context, span);
+
     // Do not take the rhs overhead from the upper expressions into account
     // when rewriting match condition.
     let cond_shape = Shape {
@@ -90,7 +102,16 @@ pub(crate) fn rewrite_match(
         IndentStyle::Visual => cond_shape.shrink_left(6, span)?,
         IndentStyle::Block => cond_shape.offset_left(6, span)?,
     };
-    let cond_str = cond.rewrite_result(context, cond_shape)?;
+
+    let cond_str = match cond.rewrite_result(context, cond_shape) {
+        Ok(cond_str) => cond_str,
+        // TODO: We probably want a common abstraction for this logic, since
+        // this is something we need to do for every piece of a larger structure
+        // like a match.
+        Err(RewriteError::SkipFormatting) => context.snippet(cond.span).to_owned(),
+        Err(err) => return Err(err),
+    };
+
     let alt_block_sep = &shape.indent.to_string_with_newline(context.config);
     let block_sep = match context.config.control_brace_style() {
         ControlBraceStyle::AlwaysNextLine => alt_block_sep,
@@ -202,6 +223,25 @@ fn collect_beginning_verts(
         .collect()
 }
 
+/// Extends an arm's span to include the trailing comma, if one is present.
+///
+/// When rewriting a partially-selected match, we need to preserve the original
+/// snippet for any unselected arms. An arm's span doesn't include the trailing
+/// comma, so if we just re-emit the snippet from the original span we will fail
+/// to inlude the comma. To fix this, we extend the span through the trailing
+/// comma for unselected arms.
+fn arm_span_with_trailing_comma(
+    context: &RewriteContext<'_>,
+    span: Span,
+    next_pos: BytePos,
+) -> Span {
+    let suffix = context.snippet(mk_sp(span.hi(), next_pos));
+    match suffix.find_uncommented(",") {
+        Some(comma_pos) => mk_sp(span.lo(), span.hi() + BytePos(comma_pos as u32 + 1)),
+        None => span,
+    }
+}
+
 fn rewrite_match_arms(
     context: &RewriteContext<'_>,
     arms: &[ast::Arm],
@@ -226,11 +266,26 @@ fn rewrite_match_arms(
         arms.iter()
             .zip(is_last_iter)
             .zip(beginning_verts.into_iter())
-            .map(|((arm, is_last), beginning_vert)| ArmWrapper::new(arm, is_last, beginning_vert)),
+            .enumerate()
+            .map(|(i, ((arm, is_last), beginning_vert))| {
+                let next_pos = arms.get(i + 1).map_or(span.hi(), |arm| arm.span().lo());
+                ArmWrapper::new(arm, is_last, beginning_vert, next_pos)
+            }),
         "}",
         "|",
         |arm| arm.span().lo(),
-        |arm| arm.span().hi(),
+        |arm| {
+            let span = arm.span();
+            if out_of_file_lines_range!(context, span) {
+                // Unselected match arms preserve everything up through the trailing comma,
+                // including any comment that comes before the comma. Include everything through
+                // the comma in the arm's span to prevent the list formatter from duplicating
+                // the comment.
+                arm_span_with_trailing_comma(context, span, arm.next_pos).hi()
+            } else {
+                span.hi()
+            }
+        },
         |arm| arm.rewrite_result(context, arm_shape),
         open_brace_pos,
         span.hi(),
@@ -251,7 +306,14 @@ fn rewrite_match_arm(
     shape: Shape,
     is_last: bool,
     has_leading_pipe: bool,
+    span: Span,
+    next_pos: BytePos,
 ) -> RewriteResult {
+    if out_of_file_lines_range!(context, span) {
+        let span = arm_span_with_trailing_comma(context, span, next_pos);
+        return Ok(context.snippet(span).to_owned());
+    }
+
     let (missing_span, attrs_str) = if !arm.attrs.is_empty() {
         if contains_skip(&arm.attrs) {
             let (_, body) = flatten_arm_body(context, arm.body.as_deref().unknown_error()?, None);
