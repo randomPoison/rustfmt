@@ -330,6 +330,30 @@ fn rewrite_match_arm(
         (mk_sp(arm.span().lo(), arm.span().lo()), String::new())
     };
 
+    let body = arm.body.as_ref().unknown_error()?;
+    let prefix_span = mk_sp(span.lo(), body.span().lo());
+
+    // If the prefix is entirely unselected, then only the body intersects with the
+    // selected lines. Preserve the prefix verbatim, bypassing the logic in
+    // `rewrite_match_body`, and rewrite the body as normal.
+    //
+    // TODO: Uhhhhh is this even correct? In `rewrite_match_body` we attempt to
+    // rewrite the body in a couple of ways, either combining the body on the same
+    // line as the pat/arrow, or putting the body on its own line. We're not doing
+    // that here, so does the mean that we can get weird or inconsistent formatting
+    // when selecting only the body of an arm?
+    if out_of_file_lines_range!(context, prefix_span) {
+        let lhs_str = context.snippet(prefix_span);
+        let body_shape = shape.offset_left(extra_offset(lhs_str, shape), body.span())?;
+        let body_str = format_expr(body, ExprType::Statement, context, body_shape)?;
+        return Ok(format!(
+            "{}{}{}",
+            lhs_str,
+            body_str,
+            arm_comma(context.config, body, is_last),
+        ));
+    }
+
     // Leading pipe offset
     // 2 = `| `
     let (pipe_offset, pipe_str) = match context.config.match_arm_leading_pipes() {
@@ -381,6 +405,7 @@ fn rewrite_match_arm(
         arm.pat.span.hi(),
         arm.body.as_ref().unknown_error()?.span().lo(),
     );
+
     rewrite_match_body(
         context,
         arm.body.as_ref().unknown_error()?,
@@ -609,6 +634,21 @@ pub(crate) fn rewrite_match_body(
         format_expr(body, ExprType::Statement, context, next_line_body_shape),
         next_line_body_shape.width,
     );
+
+    // Preserve skipped bodies while still comparing the two arm layouts.
+    //
+    // TODO: Is this the right way of handling skipping formatting? At least for the
+    // --file-lines case, if the body is out of the selected range then both
+    // formatting attempts will produce SkipFormatting. Should we maybe just do one
+    // check against file-lines to see if the body is unselected, and then bypass
+    // the match below?
+    let preserve_skipped_body = |result| match result {
+        Err(RewriteError::SkipFormatting) => Ok(context.snippet(body.span).to_owned()),
+        result => result,
+    };
+    let orig_body = preserve_skipped_body(orig_body);
+    let next_line_body = preserve_skipped_body(next_line_body);
+
     match (orig_body, next_line_body) {
         (Ok(ref orig_str), Ok(ref next_line_str))
             if prefer_next_line(orig_str, next_line_str, RhsTactics::Default) =>
