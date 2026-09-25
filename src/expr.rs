@@ -89,7 +89,36 @@ pub(crate) fn format_expr(
     context: &RewriteContext<'_>,
     shape: Shape,
 ) -> RewriteResult {
-    skip_out_of_file_lines_range_err!(context, expr.span);
+    // skip_out_of_file_lines_range_err!(context, expr.span);
+    if out_of_file_lines_range!(context, expr.span) {
+        // Check the current block alignment in `shape` against the column of
+        // the expr's span. If they're the same, return the expr's original
+        // snippet. If they're different, continue formatting the expr as
+        // normal.
+        //
+        // The idea being that if the expr is unselected and is being positioned
+        // in the same place horizontally, then we can preserve its original
+        // snippet. But if its indentation changed, then we want to re-write it
+        // even if it was unselected.
+        //
+        // This is necessary when the parent AST node is being rewritten but
+        // only some of its subexpressions were selected with --file-lines. If
+        // this subexpression was unselected, we can preserve its snippet if its
+        // still landing in the same place visually. But if the parent also
+        // changed in a way that changed the location of this expr, we need to
+        // also rewrite this expr to avoid ending up with inconsistent
+        // formatting.
+        let column = context
+            .psess
+            .inner()
+            .source_map()
+            .lookup_char_pos(expr.span.lo())
+            .col
+            .0;
+        if shape.indent.block_indent == column {
+            return Ok(context.snippet(expr.span).to_owned());
+        }
+    }
 
     if contains_skip(&*expr.attrs) {
         return Ok(context.snippet(expr.span()).to_owned());
