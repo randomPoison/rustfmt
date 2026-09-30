@@ -2,13 +2,13 @@
 
 use std::cmp::min;
 
-use itertools::Itertools;
 use rustc_ast::ast;
 use rustc_ast::token::Delimiter;
 use rustc_span::Span;
 use tracing::debug;
 
 use crate::closures;
+use crate::comment::rewrite_comment;
 use crate::config::StyleEdition;
 use crate::config::{Config, lists::*};
 use crate::expr::{
@@ -20,8 +20,8 @@ use crate::lists::{
 };
 use crate::macros::MacroArg;
 use crate::patterns::{TuplePatField, can_be_overflowed_pat};
-use crate::rewrite::{Rewrite, RewriteContext, RewriteError, RewriteErrorExt, RewriteResult};
-use crate::shape::Shape;
+use crate::rewrite::{Rewrite, RewriteContext, RewriteError, RewriteResult};
+use crate::shape::{Indent, Shape};
 use crate::source_map::SpanUtils;
 use crate::spanned::Spanned;
 use crate::types::{SegmentParam, can_be_overflowed_type};
@@ -480,25 +480,145 @@ impl<'a> Context<'a> {
         )
     }
 
-    fn try_overflow_last_item(&self, list_items: &mut Vec<ListItem>) -> DefinitiveListTactic {
-        // 1 = "("
+    // Inline and nested candidates own their rewrites. In particular, an
+    // overflowing last item must never be reused at the nested indentation.
+    fn nested_tactic(&self, list_items: &[ListItem]) -> DefinitiveListTactic {
+        if let Some((all_simple, num_args_before)) =
+            maybe_get_args_offset(self.ident, &self.items, &self.context.config)
+        {
+            let one_line = all_simple
+                && definitive_tactic(
+                    &list_items[..num_args_before],
+                    ListTactic::HorizontalVertical,
+                    Separator::Comma,
+                    self.nested_shape.width,
+                ) == DefinitiveListTactic::Horizontal
+                && definitive_tactic(
+                    &list_items[num_args_before + 1..],
+                    ListTactic::HorizontalVertical,
+                    Separator::Comma,
+                    self.nested_shape.width,
+                ) == DefinitiveListTactic::Horizontal;
+            if one_line {
+                return DefinitiveListTactic::SpecialMacro(num_args_before);
+            }
+        } else if is_every_expr_simple(&self.items)
+            && no_long_items(
+                list_items,
+                self.context.config.short_array_element_width_threshold(),
+            )
+        {
+            return DefinitiveListTactic::Mixed;
+        }
+        DefinitiveListTactic::Vertical
+    }
+
+    // Match write_list's inline comment formatting when advancing the cursor.
+    //
+    // TODO: This is potentially duplicating some of the work that write_list
+    // does, try to extract that common logic if possible.
+    fn inline_comment_width(&self, comment: Option<&str>, shape: Shape) -> Option<usize> {
+        match comment {
+            Some(comment) => {
+                let comment = rewrite_comment(comment, true, shape, self.context.config).ok()?;
+                (!comment.contains('\n')).then(|| first_line_width(&comment) + 1)
+            }
+            None => Some(0),
+        }
+    }
+
+    /// Attempts to lay out the items horizontally, optionally overflowing the last
+    /// item across multiple lines. Returns a list of formatted items if they fit in
+    /// the horizontal layout. If horizontal layout fails, items must be
+    /// re-formatted in a vertical layout.
+    fn rewrite_horizontal_items(&self, items: &[ListItem]) -> Option<Vec<ListItem>> {
+        // A line comment would force a multi-line layout, so skip horizontal layout if
+        // any of our items has one.
+        if items.iter().any(ListItem::has_single_line_comment) {
+            return None;
+        }
+
+        let mut result = items.to_vec();
+        let mut shape = self.one_line_shape;
+
+        // Walk our list of items, laying them out with a shape that reflects their
+        // horizontal position. This allows items to decide whether they should
+        // re-format themselves or preserve their original snippet, based on the
+        // --file-lines selection and their new position.
+        for (index, (item, list_item)) in self.items.iter().zip(&mut result).enumerate() {
+            // Account for a leading inline comment in the item's position.
+            shape = shape.offset_left_opt(
+                self.inline_comment_width(list_item.pre_comment.as_deref(), self.nested_shape)?,
+            )?;
+
+            // Stop at the last item. Note that we need to break AFTER accounting for the
+            // width of a preceding inline comment.
+            if index + 1 == self.items.len() {
+                break;
+            }
+
+            // Try to rewrite the item with the specific position. If the item fails to
+            // rewrite at that position, or if it would need to be written across multiple
+            // lines, horizontal layout fails.
+            let rewrite = item.rewrite(self.context, shape)?;
+            if rewrite.contains('\n') {
+                return None;
+            }
+
+            let width = last_line_width(&rewrite, self.context.config.tab_spaces());
+            list_item.item = Ok(rewrite);
+
+            // Update the shape to account for the item, the separator, and any inline
+            // post-comment.
+            //
+            // 2 = `, `
+            shape = shape.offset_left_opt(
+                width
+                    + 2
+                    + self.inline_comment_width(
+                        list_item.post_comment.as_deref(),
+                        Shape::legacy(self.nested_shape.width, Indent::empty()),
+                    )?,
+            )?;
+        }
+
+        // If we have no last item, we have no items, so I guess we're just done?
+        let Some(last_item) = self.last_item() else {
+            return Some(result);
+        };
+
+        let last = result.len() - 1;
+
+        // Attempt to overflow the last item within the remaining line width.
         let combine_arg_with_callee = self.items.len() == 1
             && self.items[0].is_expr()
             && !self.items[0].has_attrs()
             && self.ident.len() < self.context.config.tab_spaces();
         let overflow_last = combine_arg_with_callee || can_be_overflowed(self.context, &self.items);
+        if overflow_last {
+            let overflow_shape = if self.items.len() == 1 && !last_item.is_nested_call() {
+                Some(shape)
+            } else {
+                // Retain the nested-call budget, independently of the actual starting column
+                // computed from the emitted prefix. Cap the line width at item_max_width to
+                // encourage nested calls to break across multiple lines, even when there's more
+                // space available.
+                min(self.item_max_width, self.one_line_shape.width)
+                    .checked_sub(shape.used_width() - self.one_line_shape.used_width())
+                    .map(|width| Shape { width, ..shape })
+            };
 
-        // Replace the last item with its first line to see if it fits with
-        // first arguments.
-        let placeholder = if overflow_last {
+            // Disable multi-line chains for our last item, since we're trying to see if the
+            // last item can fit in one line. This still allows the last link in the chain
+            // to overflow.
             let old_value = self.context.force_one_line_chain.get();
-            match self.last_item() {
-                Some(OverflowableItem::Expr(expr))
+            match last_item {
+                OverflowableItem::Expr(expr)
                     if !combine_arg_with_callee && is_method_call(expr) =>
                 {
                     self.context.force_one_line_chain.replace(true);
                 }
-                Some(OverflowableItem::MacroArg(MacroArg::Expr(expr)))
+                OverflowableItem::MacroArg(MacroArg::Expr(expr))
                     if !combine_arg_with_callee
                         && is_method_call(expr)
                         && self.context.config.style_edition() >= StyleEdition::Edition2024 =>
@@ -507,123 +627,67 @@ impl<'a> Context<'a> {
                 }
                 _ => (),
             }
-            let result = last_item_shape(
-                &self.items,
-                list_items,
-                self.one_line_shape,
-                self.item_max_width,
-            )
-            .and_then(|arg_shape| {
-                self.rewrite_last_item_with_overflow(
-                    &mut list_items[self.items.len() - 1],
-                    arg_shape,
-                )
-            });
+
+            // Try to rewrite our last item within the remaining space in the line.
+            let overflowed = overflow_shape
+                .and_then(|shape| self.rewrite_last_item_with_overflow(&mut result[last], shape));
+
             self.context.force_one_line_chain.replace(old_value);
-            result
-        } else {
-            None
-        };
 
-        let mut tactic = definitive_tactic(
-            &*list_items,
-            ListTactic::LimitedHorizontalVertical(self.item_max_width),
-            Separator::Comma,
-            self.one_line_width,
-        );
-
-        // Replace the stub with the full overflowing last argument if the rewrite
-        // succeeded and its first line fits with the other arguments.
-        match (overflow_last, tactic, placeholder) {
-            (true, DefinitiveListTactic::Horizontal, Some(ref overflowed))
-                if self.items.len() == 1 =>
-            {
-                // When we are rewriting a nested function call, we restrict the
-                // budget for the inner function to avoid them being deeply nested.
-                // However, when the inner function has a prefix or a suffix
-                // (e.g., `foo() as u32`), this budget reduction may produce poorly
-                // formatted code, where a prefix or a suffix being left on its own
-                // line. Here we explicitly check those cases.
-                if count_newlines(overflowed) == 1 {
-                    let rw = self
-                        .items
-                        .last()
-                        .and_then(|last_item| last_item.rewrite(self.context, self.nested_shape));
-                    let no_newline = rw.as_ref().map_or(false, |s| !s.contains('\n'));
-                    if no_newline {
-                        list_items[self.items.len() - 1].item = rw.unknown_error();
-                    } else {
-                        list_items[self.items.len() - 1].item = Ok(overflowed.to_owned());
-                    }
-                } else {
-                    list_items[self.items.len() - 1].item = Ok(overflowed.to_owned());
-                }
-            }
-            (true, DefinitiveListTactic::Horizontal, placeholder @ Some(..)) => {
-                list_items[self.items.len() - 1].item = placeholder.unknown_error();
-            }
-            _ if !self.items.is_empty() => {
-                list_items[self.items.len() - 1].item = self
-                    .items
-                    .last()
-                    .and_then(|last_item| last_item.rewrite(self.context, self.nested_shape))
-                    .unknown_error();
-
-                // Use horizontal layout for a function with a single argument as long as
-                // everything fits in a single line.
-                // `self.one_line_width == 0` means vertical layout is forced.
-                if self.items.len() == 1
-                    && self.one_line_width != 0
-                    && !list_items[0].has_comment()
-                    && !list_items[0].inner_as_ref().contains('\n')
-                    && crate::lists::total_item_width(&list_items[0]) <= self.one_line_width
-                {
-                    tactic = DefinitiveListTactic::Horizontal;
-                } else {
-                    tactic = self.default_tactic(list_items);
-
-                    if tactic == DefinitiveListTactic::Vertical {
-                        if let Some((all_simple, num_args_before)) =
-                            maybe_get_args_offset(self.ident, &self.items, &self.context.config)
-                        {
-                            let one_line = all_simple
-                                && definitive_tactic(
-                                    &list_items[..num_args_before],
-                                    ListTactic::HorizontalVertical,
-                                    Separator::Comma,
-                                    self.nested_shape.width,
-                                ) == DefinitiveListTactic::Horizontal
-                                && definitive_tactic(
-                                    &list_items[num_args_before + 1..],
-                                    ListTactic::HorizontalVertical,
-                                    Separator::Comma,
-                                    self.nested_shape.width,
-                                ) == DefinitiveListTactic::Horizontal;
-
-                            if one_line {
-                                tactic = DefinitiveListTactic::SpecialMacro(num_args_before);
-                            };
-                        } else if is_every_expr_simple(&self.items)
-                            && no_long_items(
-                                list_items,
-                                self.context.config.short_array_element_width_threshold(),
+            if let Some(overflowed) = overflowed {
+                if self.default_tactic(&result) == DefinitiveListTactic::Horizontal {
+                    // The overflow budget is capped at item_max_width to discourage packing nested
+                    // calls onto one line, even when more space is available. This can leave a
+                    // small fragment on a second line: e.g., `compute_something()\n as u32`. For a
+                    // sole argument with exactly two lines, retry with the wider nested width
+                    // budget, keeping its actual inline position. Accept this exception only if it
+                    // makes the argument entirely single-line; otherwise retain the original
+                    // overflow rewrite.
+                    let alternative = if self.items.len() == 1 && count_newlines(&overflowed) == 1 {
+                        last_item
+                            .rewrite(
+                                self.context,
+                                Shape {
+                                    width: self.nested_shape.width,
+                                    ..shape
+                                },
                             )
-                        {
-                            tactic = DefinitiveListTactic::Mixed;
-                        }
-                    }
+                            .filter(|s| !s.contains('\n'))
+                    } else {
+                        None
+                    };
+                    result[last].item = Ok(alternative.unwrap_or(overflowed));
+                    return Some(result);
                 }
             }
-            _ => (),
         }
 
-        tactic
+        // We didn't overflow the last time, so rewrite it normally, failing the
+        // horizontal layout if the last time splits across multiple lines.
+        let rewrite = last_item.rewrite(self.context, shape)?;
+        if rewrite.contains('\n') {
+            return None;
+        }
+        result[last].item = Ok(rewrite);
+
+        // Use horizontal layout for a function with a single argument as long as
+        // everything fits in a single line. `self.one_line_width == 0` means vertical
+        // layout is forced.
+        let single_argument_fits = result.len() == 1
+            && self.one_line_width != 0
+            && !result[0].has_comment()
+            && crate::lists::total_item_width(&result[0]) <= self.one_line_width;
+        (single_argument_fits || self.default_tactic(&result) == DefinitiveListTactic::Horizontal)
+            .then_some(result)
     }
 
     fn rewrite_items(&self) -> Result<(bool, String), RewriteError> {
         let span = self.items_span();
         debug!("items: {:?}", self.items);
 
+        // Collect comments once, without speculatively rewriting every child at the
+        // nested indentation. Successful inline candidates need no nested rewrites
+        // (which is especially important for deep lists).
         let items = itemize_list(
             self.context.snippet_provider,
             self.items.iter(),
@@ -631,7 +695,7 @@ impl<'a> Context<'a> {
             ",",
             |item| item.span().lo(),
             |item| item.span().hi(),
-            |item| item.rewrite_result(self.context, self.nested_shape),
+            |_| Ok(String::new()),
             span.lo(),
             span.hi(),
             true,
@@ -640,10 +704,18 @@ impl<'a> Context<'a> {
 
         debug!("items: {list_items:?}");
 
-        // Try letting the last argument overflow to the next line with block
-        // indentation. If its first line fits on one line with the other arguments,
-        // we format the function arguments horizontally.
-        let tactic = self.try_overflow_last_item(&mut list_items);
+        // Try rewriting the items horizontally. If they don't fit, rewrite the items
+        // using our nested shape.
+        let tactic = if let Some(horizontal_items) = self.rewrite_horizontal_items(&list_items) {
+            list_items = horizontal_items;
+            DefinitiveListTactic::Horizontal
+        } else {
+            for (item, list_item) in self.items.iter().zip(&mut list_items) {
+                list_item.item = item.rewrite_result(self.context, self.nested_shape);
+            }
+            self.nested_tactic(&list_items)
+        };
+
         let trailing_separator = if let Some(tactic) = self.force_separator_tactic {
             tactic
         } else if !self.context.use_block_indent() {
@@ -751,31 +823,6 @@ fn can_be_overflowed(context: &RewriteContext<'_>, items: &[OverflowableItem<'_>
     items
         .last()
         .map_or(false, |x| x.can_be_overflowed(context, items.len()))
-}
-
-/// Returns a shape for the last argument which is going to be overflowed.
-fn last_item_shape(
-    lists: &[OverflowableItem<'_>],
-    items: &[ListItem],
-    shape: Shape,
-    args_max_width: usize,
-) -> Option<Shape> {
-    if items.len() == 1 && !lists.get(0)?.is_nested_call() {
-        return Some(shape);
-    }
-    let offset = items
-        .iter()
-        .dropping_back(1)
-        .map(|i| {
-            // 2 = ", "
-            2 + i.inner_as_ref().len()
-        })
-        .sum();
-    Shape {
-        width: min(args_max_width, shape.width),
-        ..shape
-    }
-    .offset_left_opt(offset)
 }
 
 fn shape_from_indent_style(

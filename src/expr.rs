@@ -91,10 +91,9 @@ pub(crate) fn format_expr(
 ) -> RewriteResult {
     // skip_out_of_file_lines_range_err!(context, expr.span);
     if out_of_file_lines_range!(context, expr.span) {
-        // Check the current block alignment in `shape` against the column of
-        // the expr's span. If they're the same, return the expr's original
-        // snippet. If they're different, continue formatting the expr as
-        // normal.
+        // Check the starting column in `shape` against the column of the expr's
+        // span. If they're the same, return the expr's original snippet. If
+        // they're different, continue formatting the expr as normal.
         //
         // The idea being that if the expr is unselected and is being positioned
         // in the same place horizontally, then we can preserve its original
@@ -108,6 +107,12 @@ pub(crate) fn format_expr(
         // changed in a way that changed the location of this expr, we need to
         // also rewrite this expr to avoid ending up with inconsistent
         // formatting.
+        //
+        // TODO: There's an edge case here where an item may land at the same
+        // column it was at before, even though it's being laid out horizontally
+        // (and therefore should be rewritten). We want to do something like
+        // only preserve the snippet if offset is 0, indicating the expr is on
+        // its own line.
         let column = context
             .psess
             .inner()
@@ -115,7 +120,7 @@ pub(crate) fn format_expr(
             .lookup_char_pos(expr.span.lo())
             .col
             .0;
-        if shape.indent.block_indent == column {
+        if shape.used_width() == column {
             return Ok(context.snippet(expr.span).to_owned());
         }
     }
