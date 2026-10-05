@@ -108,11 +108,19 @@ pub(crate) fn format_expr(
         // also rewrite this expr to avoid ending up with inconsistent
         // formatting.
         //
-        // TODO: There's an edge case here where an item may land at the same
-        // column it was at before, even though it's being laid out horizontally
-        // (and therefore should be rewritten). We want to do something like
-        // only preserve the snippet if offset is 0, indicating the expr is on
-        // its own line.
+        // We only preserve the snippet when offset == 0 because otherwise the
+        // expr may land at the same column as its original location while still
+        // being on a modified line. In that case we'd end up preserving the
+        // snippet when we'd prefer to rewrite it. Forceing a rewrite at
+        // non-zero offset means that we always rewrite things that are being
+        // laid out horizontally, which ensures that exprs moved to a horizontal
+        // layout always get rewritten. This may result in more code being
+        // formatted outside of the selected lines, but guarantees that things
+        // moved to a new line get rewritten.
+        //
+        // TODO: This way of determining the column in the source text is maybe
+        // not right? Might need to check the unicode width, since that's how we
+        // determine string width elsewhere.
         let column = context
             .psess
             .inner()
@@ -120,7 +128,7 @@ pub(crate) fn format_expr(
             .lookup_char_pos(expr.span.lo())
             .col
             .0;
-        if shape.used_width() == column {
+        if shape.offset == 0 && shape.used_width() == column {
             return Ok(context.snippet(expr.span).to_owned());
         }
     }
