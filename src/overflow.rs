@@ -706,7 +706,27 @@ impl<'a> Context<'a> {
 
         // Try rewriting the items horizontally. If they don't fit, rewrite the items
         // using our nested shape.
-        let tactic = if let Some(horizontal_items) = self.rewrite_horizontal_items(&list_items) {
+        let tactic = if self.context.config.style_edition() < StyleEdition::Edition2027
+            && matches!(self.last_item(), Some(OverflowableItem::SegmentParam(..)))
+            && !can_be_overflowed(self.context, &self.items)
+        {
+            // Older editions rewrite non-overflowing generic arguments at the
+            // nested indentation even when the list fits horizontally. Preserve
+            // that budget, including failures on deeply nested generics.
+            for (item, list_item) in self.items.iter().zip(&mut list_items) {
+                list_item.item = item.rewrite_result(self.context, self.nested_shape);
+            }
+            if self.items.len() == 1
+                && self.one_line_width != 0
+                && !list_items[0].has_comment()
+                && !list_items[0].inner_as_ref().contains('\n')
+                && crate::lists::total_item_width(&list_items[0]) <= self.one_line_width
+            {
+                DefinitiveListTactic::Horizontal
+            } else {
+                self.default_tactic(&list_items)
+            }
+        } else if let Some(horizontal_items) = self.rewrite_horizontal_items(&list_items) {
             list_items = horizontal_items;
             DefinitiveListTactic::Horizontal
         } else {
