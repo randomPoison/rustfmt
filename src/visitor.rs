@@ -69,6 +69,24 @@ impl SnippetProvider {
     pub(crate) fn end_pos(&self) -> BytePos {
         BytePos::from_usize(self.end_pos)
     }
+
+    /// Checks if a position is at the start of a line and at the appropriate
+    /// indentation.
+    ///
+    /// When determining if we can preserve an unselected item or statement, we want
+    /// to take indentation into account such that we only preserve an unselected
+    /// statement if it would land at the same indentation as it was at before.
+    pub(crate) fn is_at_indent(&self, pos: BytePos, indent: Indent, config: &Config) -> bool {
+        let Some(offset) = pos.to_usize().checked_sub(self.start_pos) else {
+            return false;
+        };
+        let Some(prefix) = self.big_snippet.get(..offset) else {
+            return false;
+        };
+        let line_prefix = prefix.rsplit('\n').next().unwrap_or("");
+        line_prefix.chars().all(|c| c == ' ' || c == '\t')
+            && last_line_width(line_prefix, config.tab_spaces()) == indent.width()
+    }
 }
 
 pub(crate) struct FmtVisitor<'a> {
@@ -118,12 +136,22 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
     fn visit_stmt(&mut self, stmt: &Stmt<'_>, include_empty_semi: bool) {
         debug!("visit_stmt: {}", self.psess.span_to_debug_info(stmt.span()));
 
-        // Preserve original source snippet if the statement isn't in the selected file lines.
+        // We actually want this, but I haven't updated the macro to do the indentation check yet.
+        // skip_out_of_file_lines_range_visitor!(self, item.span);
+
         if out_of_file_lines_range!(self, stmt.span()) {
-            let stmt_span = source!(self, stmt.span());
-            self.push_str(self.snippet(mk_sp(self.last_pos, stmt_span.hi())));
-            self.last_pos = stmt_span.hi();
-            return;
+            // Only preserve the snippet if its at the same position as it was before. If it
+            // wasn't on its own line, or if its not at its expected indentation, then we
+            // still want to rewrite it even if it didn't directly intersect with the line
+            // selection. This happens when a parent or sibling is selected.
+            if self.snippet_provider.is_at_indent(
+                stmt.span().lo(),
+                self.shape().indent,
+                self.config,
+            ) {
+                self.push_rewrite(stmt.span(), None);
+                return;
+            }
         }
 
         if stmt.is_empty() {
@@ -785,7 +813,11 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
     }
 
     pub(crate) fn push_rewrite(&mut self, span: Span, rewrite: Option<String>) {
-        self.format_missing_with_indent(source!(self, span).lo());
+        if rewrite.is_some() {
+            self.format_missing_with_forced_indent(source!(self, span).lo());
+        } else {
+            self.format_missing_with_indent(source!(self, span).lo());
+        }
         self.push_rewrite_inner(span, rewrite);
     }
 

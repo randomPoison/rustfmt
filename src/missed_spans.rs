@@ -48,24 +48,30 @@ impl<'a> FmtVisitor<'a> {
             self.last_pos = end;
             return;
         }
-        self.format_missing_inner(end, |this, last_snippet, _| this.push_str(last_snippet))
+        self.format_missing_inner(end, false, |this, last_snippet, _| {
+            this.push_str(last_snippet)
+        })
     }
 
     pub(crate) fn format_missing_with_indent(&mut self, end: BytePos) {
-        self.format_missing_indent(end, true)
+        self.format_missing_indent(end, true, false)
     }
 
     pub(crate) fn format_missing_no_indent(&mut self, end: BytePos) {
-        self.format_missing_indent(end, false)
+        self.format_missing_indent(end, false, false)
     }
 
-    fn format_missing_indent(&mut self, end: BytePos, should_indent: bool) {
+    pub(crate) fn format_missing_with_forced_indent(&mut self, end: BytePos) {
+        self.format_missing_indent(end, true, true)
+    }
+
+    fn format_missing_indent(&mut self, end: BytePos, should_indent: bool, force_indent: bool) {
         let config = self.config;
-        self.format_missing_inner(end, |this, last_snippet, snippet| {
+        self.format_missing_inner(end, force_indent, |this, last_snippet, snippet| {
             this.push_str(last_snippet.trim_end());
             if last_snippet == snippet
                 && !this.output_at_start()
-                && !out_of_file_lines_range!(this, mk_sp(this.last_pos, end))
+                && (force_indent || !out_of_file_lines_range!(this, mk_sp(this.last_pos, end)))
             {
                 // No new lines in the snippet.
                 this.push_str("\n");
@@ -80,6 +86,7 @@ impl<'a> FmtVisitor<'a> {
     fn format_missing_inner<F: Fn(&mut FmtVisitor<'_>, &str, &str)>(
         &mut self,
         end: BytePos,
+        force_indent: bool,
         process_last_snippet: F,
     ) {
         let start = self.last_pos;
@@ -116,7 +123,7 @@ impl<'a> FmtVisitor<'a> {
             self.push_vertical_spaces(count_newlines(snippet));
             process_last_snippet(self, "", snippet);
         } else {
-            self.write_snippet(span, &process_last_snippet);
+            self.write_snippet(span, force_indent, &process_last_snippet);
         }
     }
 
@@ -143,7 +150,7 @@ impl<'a> FmtVisitor<'a> {
         self.push_str(&blank_lines);
     }
 
-    fn write_snippet<F>(&mut self, span: Span, process_last_snippet: F)
+    fn write_snippet<F>(&mut self, span: Span, force_indent: bool, process_last_snippet: F)
     where
         F: Fn(&mut FmtVisitor<'_>, &str, &str),
     {
@@ -158,7 +165,14 @@ impl<'a> FmtVisitor<'a> {
 
         debug!("write_snippet `{}`", snippet);
 
-        self.write_snippet_inner(big_snippet, snippet, big_diff, span, process_last_snippet);
+        self.write_snippet_inner(
+            big_snippet,
+            snippet,
+            big_diff,
+            span,
+            force_indent,
+            process_last_snippet,
+        );
     }
 
     fn write_snippet_inner<F>(
@@ -167,6 +181,7 @@ impl<'a> FmtVisitor<'a> {
         old_snippet: &str,
         big_diff: usize,
         span: Span,
+        force_indent: bool,
         process_last_snippet: F,
     ) where
         F: Fn(&mut FmtVisitor<'_>, &str, &str),
@@ -217,14 +232,21 @@ impl<'a> FmtVisitor<'a> {
                 status.line_start = offset + subslice.len()
             } else {
                 // 3: code which we failed to format or which is not within file-lines range.
-                self.process_missing_code(&mut status, snippet, subslice, offset, file_name);
+                self.process_missing_code(
+                    &mut status,
+                    snippet,
+                    subslice,
+                    offset,
+                    file_name,
+                    force_indent,
+                );
             }
         }
 
         let last_snippet = &snippet[status.line_start..];
         let (_, _, within_file_lines_range) =
             slice_within_file_lines_range(self.config.file_lines(), status.cur_line, last_snippet);
-        if within_file_lines_range {
+        if force_indent || within_file_lines_range {
             process_last_snippet(self, last_snippet, snippet);
         } else {
             // just append what's left
@@ -333,6 +355,7 @@ impl<'a> FmtVisitor<'a> {
         subslice: &str,
         offset: usize,
         file_name: &FileName,
+        force_indent: bool,
     ) {
         for (mut i, c) in subslice.char_indices() {
             i += offset;
@@ -364,6 +387,12 @@ impl<'a> FmtVisitor<'a> {
         }
 
         let mut remaining = &snippet[status.line_start..subslice.len() + offset];
+
+        // If we're forcing indentation, don't emit a final whitespace line.
+        if force_indent && subslice.len() + offset == snippet.len() && remaining.trim().is_empty() {
+            return;
+        }
+
         status.line_start = subslice.len() + offset;
 
         let skip_this_line = !self
