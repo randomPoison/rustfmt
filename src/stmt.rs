@@ -121,8 +121,6 @@ fn format_stmt(
     expr_type: ExprType,
     is_last_expr: bool,
 ) -> RewriteResult {
-    skip_out_of_file_lines_range_err!(context, stmt.span());
-
     let result = match stmt.kind {
         ast::StmtKind::Let(ref local) => local.rewrite_result(context, shape),
         ast::StmtKind::Expr(ref ex) | ast::StmtKind::Semi(ref ex) => {

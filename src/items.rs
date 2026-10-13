@@ -58,8 +58,6 @@ impl Rewrite for ast::Local {
             self, shape.width, shape.indent
         );
 
-        skip_out_of_file_lines_range_err!(context, self.span);
-
         if contains_skip(&self.attrs) {
             return Err(RewriteError::SkipFormatting);
         }
