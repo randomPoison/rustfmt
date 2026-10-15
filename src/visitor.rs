@@ -278,7 +278,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
 
         let rest_span = self.next_span(b.span.hi());
         if out_of_file_lines_range!(self, rest_span) {
-            self.push_str(self.snippet(rest_span));
+            self.format_missing(rest_span.hi());
             self.block_indent = self.block_indent.block_unindent(self.config);
         } else {
             // Ignore the closing brace.

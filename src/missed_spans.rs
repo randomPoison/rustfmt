@@ -209,21 +209,87 @@ impl<'a> FmtVisitor<'a> {
                 );
                 (lf_count, crlf_count, within_file_lines_range)
             };
-        for (kind, offset, subslice) in CommentCodeSlices::new(snippet) {
+        for (kind, mut offset, mut subslice) in CommentCodeSlices::new(snippet) {
             debug!("{:?}: {:?}", kind, subslice);
 
             let (lf_count, crlf_count, within_file_lines_range) =
                 slice_within_file_lines_range(self.config.file_lines(), status.cur_line, subslice);
             let newline_count = lf_count + crlf_count;
-            if CodeCharKind::Comment == kind && within_file_lines_range {
+            let has_preceding_text_on_line = !big_snippet[..big_diff + offset]
+                .rsplit('\n')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .is_empty();
+
+            // A trailing line comment can be grouped with standalone comments below it.
+            // Preserve that first line separately so it does not hide their indentation.
+            //
+            // Example:
+            //
+            // ```
+            //     foo(); // trailing
+            //  // comment at incorrect indentation
+            // ```
+            //
+            // `CommentCodeSlices` groups these two comments into a single slice, when we
+            // need to treat them as separate for the purpose of line selection and
+            // unselected comment preservation.
+            if kind == CodeCharKind::Comment
+                && !within_file_lines_range
+                && subslice.starts_with("//")
+                && has_preceding_text_on_line
+            {
+                if let Some(end) = subslice.find('\n').map(|i| i + 1) {
+                    self.process_missing_code(
+                        &mut status,
+                        snippet,
+                        &subslice[..end],
+                        offset,
+                        file_name,
+                        false,
+                    );
+                    let rest = subslice[end..].trim_start_matches([' ', '\t']);
+                    offset += subslice.len() - rest.len();
+                    subslice = rest;
+                    if subslice.is_empty() {
+                        continue;
+                    }
+                }
+            }
+
+            let prefix = &big_snippet[..(offset + big_diff)];
+            let line_prefix = prefix.rsplit('\n').next().unwrap_or("");
+            let is_standalone_comment =
+                CodeCharKind::Comment == kind && line_prefix.chars().all(|c| c == ' ' || c == '\t');
+
+            let comment_needs_indent = if is_standalone_comment {
+                let expected_indent = self.block_indent.width();
+                let first_line_needs_indent =
+                    last_line_width(line_prefix, self.config.tab_spaces()) != expected_indent;
+
+                // Check later lines too: consecutive line comments share one slice.
+                let later_line_needs_indent = subslice.starts_with("//")
+                    && subslice.lines().skip(1).any(|line| {
+                        let text = line.trim_start_matches([' ', '\t']);
+                        let indentation = &line[..line.len() - text.len()];
+                        let indent_width = last_line_width(indentation, self.config.tab_spaces());
+                        text.starts_with("//") && indent_width != expected_indent
+                    });
+
+                first_line_needs_indent || later_line_needs_indent
+            } else {
+                false
+            };
+
+            if CodeCharKind::Comment == kind && (within_file_lines_range || comment_needs_indent) {
+                if comment_needs_indent {
+                    // The preceding unselected slice may already have emitted indentation.
+                    self.buffer
+                        .truncate(self.buffer.trim_end_matches([' ', '\t']).len());
+                }
                 // 1: comment.
-                self.process_comment(
-                    &mut status,
-                    snippet,
-                    &big_snippet[..(offset + big_diff)],
-                    offset,
-                    subslice,
-                );
+                self.process_comment(&mut status, snippet, prefix, offset, subslice);
             } else if subslice.trim().is_empty() && newline_count > 0 && within_file_lines_range {
                 // 2: blank lines.
                 self.push_vertical_spaces(newline_count);

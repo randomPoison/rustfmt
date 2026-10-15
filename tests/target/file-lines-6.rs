@@ -8,7 +8,7 @@ mod foo {
     fn bar() {
         // test
         let i = 12;
-                                 // test
+        // test
     }
 
     fn baz() {
