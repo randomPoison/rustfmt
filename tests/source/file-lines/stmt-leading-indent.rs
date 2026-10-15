@@ -2,7 +2,7 @@
 
 fn main() {
 let x=1; let y=2;
-  // Keep this unselected comment's indentation.
+  // Reindent this unselected comment.
   let z=3;
     let preserved=4;
     // The let starts at column four, but another statement precedes it.
