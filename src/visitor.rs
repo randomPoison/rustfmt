@@ -277,9 +277,81 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         }
 
         let rest_span = self.next_span(b.span.hi());
-        if out_of_file_lines_range!(self, rest_span) {
-            self.format_missing(rest_span.hi());
-            self.block_indent = self.block_indent.block_unindent(self.config);
+        let closing_indent = self.block_indent.block_unindent(self.config);
+        if out_of_file_lines_range!(self, rest_span) && has_braces {
+            // TODO: This produces inconsistent formatting for a trailing comment in an
+            // if-else block. Here we're going through format_missing to handle comment
+            // preservation, which has its own indentation check for determining if an
+            // unselected comment can be preserved. This will force an unselected comment to
+            // block indentation, which isn't consistent with how close_block will position
+            // the final comment in an if-else.
+            //
+            // The relevant edge case is (select only the line containing `1`):
+            //
+            // ```
+            // fn main() {
+            //     let value = if true {
+            //         1
+            //   // Before else.
+            //     } else {
+            //         0
+            //     };
+            // }
+            // ```
+            //
+            // When formatting the entire file, the final comment is aligned with the
+            // closing brace of the block:
+            //
+            // ```
+            // fn main() {
+            //     let value = if true {
+            //         1
+            //     // Before else.
+            //     } else {
+            //         0
+            //     };
+            // }
+            // ```
+            //
+            // But with this logic here, an unselected final comment gets block indentation:
+            //
+            // ```
+            // fn main() {
+            //     let value = if true {
+            //         1
+            //         // Before else.
+            //     } else {
+            //         0
+            //     };
+            // }
+            // ```
+            //
+            // The fix is likely to always go through close_block, and update the comment
+            // handling in close_block to be indentation-aware, the way that the new logic
+            // in format_missing is. This might benefit from some additional refactoring to
+            // avoid duplicating that new logic between close_block and format_missing. For
+            // now, what we have here is a reasonable prototype of the expected behavior,
+            // and we can do the additional refactoring to fix this bug if the new
+            // --file-lines design is approved.
+            let closing_pos = b.span.hi() - brace_compensation;
+            if self
+                .snippet_provider
+                .is_at_indent(closing_pos, closing_indent, self.config)
+            {
+                self.format_missing(rest_span.hi());
+            } else {
+                // Process comments at the body indentation before fixing the brace.
+                // A change to the brace must not force rewriting unselected comments.
+                self.format_missing(closing_pos);
+                self.buffer
+                    .truncate(self.buffer.trim_end_matches([' ', '\t']).len());
+                if !self.buffer.ends_with('\n') {
+                    self.push_str("\n");
+                }
+                self.push_str(&closing_indent.to_string(self.config));
+                self.push_str("}");
+            }
+            self.block_indent = closing_indent;
         } else {
             // Ignore the closing brace.
             let missing_span = self.next_span(b.span.hi() - brace_compensation);
