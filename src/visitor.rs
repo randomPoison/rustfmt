@@ -8,7 +8,8 @@ use tracing::debug;
 
 use crate::attr::*;
 use crate::comment::{
-    CodeCharKind, CommentCodeSlices, contains_comment, recover_comment_removed, rewrite_comment,
+    CharClasses, CodeCharKind, CommentCodeSlices, contains_comment, recover_comment_removed,
+    rewrite_comment,
 };
 use crate::config::{BraceStyle, Config, MacroSelector, StyleEdition};
 use crate::coverage::transform_missing_snippet;
@@ -87,6 +88,20 @@ impl SnippetProvider {
         line_prefix.chars().all(|c| c == ' ' || c == '\t')
             && last_line_width(line_prefix, config.tab_spaces()) == indent.width()
     }
+
+    /// Whether the rest of this physical line contains only whitespace and comments.
+    /// Code after a multiline comment's first newline belongs to a different line.
+    fn has_no_trailing_code(&self, pos: BytePos) -> bool {
+        let Some(offset) = pos.to_usize().checked_sub(self.start_pos) else {
+            return false;
+        };
+        let Some(suffix) = self.big_snippet.get(offset..) else {
+            return false;
+        };
+        CharClasses::new(suffix.chars())
+            .take_while(|(_, c)| *c != '\n')
+            .all(|(kind, c)| kind.is_comment() || c.is_whitespace())
+    }
 }
 
 pub(crate) struct FmtVisitor<'a> {
@@ -133,26 +148,24 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         mk_sp(self.last_pos, hi)
     }
 
+    /// Preserve an unselected node only if formatting its surroundings leaves
+    /// both its indentation and its final line intact.
+    pub(crate) fn can_preserve_unselected(&self, span: Span) -> bool {
+        out_of_file_lines_range!(self, span)
+            && self.snippet_provider.is_at_indent(
+                source!(self, span).lo(),
+                self.shape().indent,
+                self.config,
+            )
+            && self
+                .snippet_provider
+                .has_no_trailing_code(source!(self, span).hi())
+    }
+
     fn visit_stmt(&mut self, stmt: &Stmt<'_>, include_empty_semi: bool) {
         debug!("visit_stmt: {}", self.psess.span_to_debug_info(stmt.span()));
 
-        // We actually want this, but I haven't updated the macro to do the indentation check yet.
-        // skip_out_of_file_lines_range_visitor!(self, item.span);
-
-        if out_of_file_lines_range!(self, stmt.span()) {
-            // Only preserve the snippet if its at the same position as it was before. If it
-            // wasn't on its own line, or if its not at its expected indentation, then we
-            // still want to rewrite it even if it didn't directly intersect with the line
-            // selection. This happens when a parent or sibling is selected.
-            if self.snippet_provider.is_at_indent(
-                stmt.span().lo(),
-                self.shape().indent,
-                self.config,
-            ) {
-                self.push_rewrite(stmt.span(), None);
-                return;
-            }
-        }
+        skip_out_of_file_lines_range_visitor!(self, stmt.span());
 
         if stmt.is_empty() {
             // If the statement is empty, just skip over it. Before that, make sure any comment
@@ -516,7 +529,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         };
 
         if let Some((fn_str, fn_brace_style)) = rewrite {
-            self.format_missing_with_indent(source!(self, s).lo());
+            self.format_missing_with_forced_indent(source!(self, s).lo());
 
             if let Some(rw) = self.single_line_fn(&fn_str, block, inner_attrs) {
                 self.push_str(&rw);
@@ -839,31 +852,34 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
     }
 
     fn visit_mac(&mut self, mac: &ast::MacCall, pos: MacroPosition) {
-        skip_out_of_file_lines_range_visitor!(self, mac.span());
+        // The macro span excludes its semicolon. Include it before checking for
+        // trailing code (part of the line selection check), so the macro's own
+        // separator does not force a rewrite.
+        let needs_semi = matches!(
+            macro_style(mac, &self.get_context()),
+            Delimiter::Bracket | Delimiter::Parenthesis,
+        ) && MacroPosition::Item == pos;
+
+        let span = if needs_semi {
+            let search_span = mk_sp(mac.span().hi(), self.snippet_provider.end_pos());
+            let hi = self.snippet_provider.span_before(search_span, ";");
+            mk_sp(mac.span().lo(), hi + BytePos(1))
+        } else {
+            mac.span()
+        };
+
+        skip_out_of_file_lines_range_visitor!(self, span);
 
         // 1 = ;
         let shape = self.shape().saturating_sub_width(1);
         let rewrite = self.with_context(|ctx| rewrite_macro(mac, ctx, shape, pos).ok());
-        // As of v638 of the rustc-ap-* crates, the associated span no longer includes
-        // the trailing semicolon. This determines the correct span to ensure scenarios
-        // with whitespace between the delimiters and trailing semi (i.e. `foo!(abc)     ;`)
-        // are formatted correctly.
-        let (span, rewrite) = match macro_style(mac, &self.get_context()) {
-            Delimiter::Bracket | Delimiter::Parenthesis if MacroPosition::Item == pos => {
-                let search_span = mk_sp(mac.span().hi(), self.snippet_provider.end_pos());
-                let hi = self.snippet_provider.span_before(search_span, ";");
-                let target_span = mk_sp(mac.span().lo(), hi + BytePos(1));
-                let rewrite = rewrite.map(|rw| {
-                    if !rw.ends_with(';') {
-                        format!("{};", rw)
-                    } else {
-                        rw
-                    }
-                });
-                (target_span, rewrite)
+        let rewrite = rewrite.map(|rw| {
+            if needs_semi && !rw.ends_with(';') {
+                format!("{};", rw)
+            } else {
+                rw
             }
-            _ => (mac.span(), rewrite),
-        };
+        });
 
         self.push_rewrite(span, rewrite);
     }
