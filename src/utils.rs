@@ -443,7 +443,7 @@ macro_rules! skip_out_of_file_lines_range_err {
 
 macro_rules! skip_out_of_file_lines_range_visitor {
     ($self:ident, $span:expr) => {
-        if out_of_file_lines_range!($self, $span) {
+        if $self.can_preserve_unselected($span) {
             $self.push_rewrite($span, None);
             return;
         }
