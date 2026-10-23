@@ -91,7 +91,7 @@ impl SnippetProvider {
 
     /// Whether the rest of this physical line contains only whitespace and comments.
     /// Code after a multiline comment's first newline belongs to a different line.
-    fn has_no_trailing_code(&self, pos: BytePos) -> bool {
+    pub(crate) fn has_no_trailing_code(&self, pos: BytePos) -> bool {
         let Some(offset) = pos.to_usize().checked_sub(self.start_pos) else {
             return false;
         };

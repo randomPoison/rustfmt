@@ -282,8 +282,20 @@ impl<'a> FmtVisitor<'a> {
                 false
             };
 
-            if CodeCharKind::Comment == kind && (within_file_lines_range || comment_needs_indent) {
-                if comment_needs_indent {
+            // Moving code off the comment's final line requires rewriting that line.
+            // Look beyond this missing span, which ends before the following node.
+            // Line-comment slices include their newline, so they cannot share their
+            // final line with following code.
+            let comment_has_trailing_code = kind == CodeCharKind::Comment
+                && !subslice.ends_with('\n')
+                && !self
+                    .snippet_provider
+                    .has_no_trailing_code(span.lo() + BytePos::from_usize(offset + subslice.len()));
+
+            if CodeCharKind::Comment == kind
+                && (within_file_lines_range || comment_needs_indent || comment_has_trailing_code)
+            {
+                if comment_needs_indent || comment_has_trailing_code {
                     // The preceding unselected slice may already have emitted indentation.
                     self.buffer
                         .truncate(self.buffer.trim_end_matches([' ', '\t']).len());
