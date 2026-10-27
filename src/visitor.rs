@@ -317,91 +317,17 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
             }
         }
 
-        let rest_span = self.next_span(b.span.hi());
-        let closing_indent = self.block_indent.block_unindent(self.config);
-        if out_of_file_lines_range!(self, rest_span) && has_braces {
-            // TODO: This produces inconsistent formatting for a trailing comment in an
-            // if-else block. Here we're going through format_missing to handle comment
-            // preservation, which has its own indentation check for determining if an
-            // unselected comment can be preserved. This will force an unselected comment to
-            // block indentation, which isn't consistent with how close_block will position
-            // the final comment in an if-else.
-            //
-            // The relevant edge case is (select only the line containing `1`):
-            //
-            // ```
-            // fn main() {
-            //     let value = if true {
-            //         1
-            //   // Before else.
-            //     } else {
-            //         0
-            //     };
-            // }
-            // ```
-            //
-            // When formatting the entire file, the final comment is aligned with the
-            // closing brace of the block:
-            //
-            // ```
-            // fn main() {
-            //     let value = if true {
-            //         1
-            //     // Before else.
-            //     } else {
-            //         0
-            //     };
-            // }
-            // ```
-            //
-            // But with this logic here, an unselected final comment gets block indentation:
-            //
-            // ```
-            // fn main() {
-            //     let value = if true {
-            //         1
-            //         // Before else.
-            //     } else {
-            //         0
-            //     };
-            // }
-            // ```
-            //
-            // The fix is likely to always go through close_block, and update the comment
-            // handling in close_block to be indentation-aware, the way that the new logic
-            // in format_missing is. This might benefit from some additional refactoring to
-            // avoid duplicating that new logic between close_block and format_missing. For
-            // now, what we have here is a reasonable prototype of the expected behavior,
-            // and we can do the additional refactoring to fix this bug if the new
-            // --file-lines design is approved.
-            let closing_pos = b.span.hi() - brace_compensation;
-            if self
-                .snippet_provider
-                .is_at_indent(closing_pos, closing_indent, self.config)
-            {
-                self.format_missing(rest_span.hi());
-            } else {
-                // Process comments at the body indentation before fixing the brace.
-                // A change to the brace must not force rewriting unselected comments.
-                self.format_missing(closing_pos);
-                self.buffer
-                    .truncate(self.buffer.trim_end_matches([' ', '\t']).len());
-                if !self.buffer.ends_with('\n') {
-                    self.push_str("\n");
-                }
-                self.push_str(&closing_indent.to_string(self.config));
-                self.push_str("}");
-            }
-            self.block_indent = closing_indent;
-        } else {
-            // Ignore the closing brace.
-            let missing_span = self.next_span(b.span.hi() - brace_compensation);
-            self.close_block(missing_span, self.unindent_comment_on_closing_brace(b));
-        }
+        // Ignore the closing brace.
+        let missing_span = self.next_span(b.span.hi() - brace_compensation);
+        self.close_block(
+            missing_span,
+            self.unindent_comment_on_closing_brace(b),
+            has_braces,
+        );
         self.last_pos = source!(self, b.span).hi();
     }
 
-    fn close_block(&mut self, span: Span, unindent_comment: bool) {
+    fn close_block(&mut self, span: Span, unindent_comment: bool, has_braces: bool) {
         let config = self.config;
 
         let mut last_hi = span.lo();
@@ -423,6 +349,29 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         } else {
             false
         };
+
+        // Use the same placement decision for selected and unselected comments. The
+        // missing-span formatter preserves eligible unselected comments and rewrites
+        // those whose indentation no longer matches their context. Include the closing
+        // brace in the selection check, since selecting it should continue to use the
+        // normal closing-block formatting below.
+        let rest_span = mk_sp(span.lo(), span.hi() + BytePos(1));
+        if has_braces && out_of_file_lines_range!(self, rest_span) {
+            let closing_indent = self.block_indent.block_unindent(config);
+            if unindent_comment && !align_to_right {
+                self.block_indent = closing_indent;
+            }
+            self.format_missing(span.hi());
+            self.buffer
+                .truncate(self.buffer.trim_end_matches([' ', '\t']).len());
+            if !self.buffer.ends_with('\n') {
+                self.push_str("\n");
+            }
+            self.block_indent = closing_indent;
+            self.push_str(&closing_indent.to_string(config));
+            self.push_str("}");
+            return;
+        }
 
         for (kind, offset, sub_slice) in CommentCodeSlices::new(comment_snippet) {
             let sub_slice = transform_missing_snippet(config, sub_slice);
@@ -1167,7 +1116,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
                 self.visit_attrs(attrs, ast::AttrStyle::Inner);
                 self.walk_mod_items(items);
                 let missing_span = self.next_span(inner_span.hi() - BytePos(1));
-                self.close_block(missing_span, false);
+                self.close_block(missing_span, false, true);
             }
             self.last_pos = source!(self, inner_span).hi();
         } else {
