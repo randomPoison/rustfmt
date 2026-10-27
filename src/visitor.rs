@@ -160,6 +160,34 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
             && self
                 .snippet_provider
                 .has_no_trailing_code(source!(self, span).hi())
+            && self.can_preserve_trailing_comments(source!(self, span).hi())
+    }
+
+    /// A block comment can start on an unselected node's final line but extend
+    /// into selected lines. Rewriting it also requires rewriting that node.
+    fn can_preserve_trailing_comments(&self, pos: BytePos) -> bool {
+        let suffix = self.snippet(mk_sp(pos, self.snippet_provider.end_pos()));
+        for (kind, offset, slice) in CommentCodeSlices::new(suffix) {
+            if kind == CodeCharKind::Comment && slice.starts_with("/*") {
+                let start = pos + BytePos::from_usize(offset);
+                if self.block_comment_is_selected(start, slice)
+                    || !self
+                        .snippet_provider
+                        .has_no_trailing_code(start + BytePos::from_usize(slice.len()))
+                {
+                    return false;
+                }
+            }
+            if slice.contains('\n') {
+                break;
+            }
+        }
+        true
+    }
+
+    pub(crate) fn block_comment_is_selected(&self, start: BytePos, comment: &str) -> bool {
+        let span = mk_sp(start, start + BytePos::from_usize(comment.len() - 1));
+        !out_of_file_lines_range!(self, span)
     }
 
     fn visit_stmt(&mut self, stmt: &Stmt<'_>, include_empty_semi: bool) {
