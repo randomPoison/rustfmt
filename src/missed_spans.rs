@@ -292,10 +292,20 @@ impl<'a> FmtVisitor<'a> {
                     .snippet_provider
                     .has_no_trailing_code(span.lo() + BytePos::from_usize(offset + subslice.len()));
 
+            // A block comment is rewritten as a whole if any of its lines are
+            // selected, including when its first line follows unselected code.
+            let block_comment_is_selected = kind == CodeCharKind::Comment
+                && subslice.starts_with("/*")
+                && self
+                    .block_comment_is_selected(span.lo() + BytePos::from_usize(offset), subslice);
+
             if CodeCharKind::Comment == kind
-                && (within_file_lines_range || comment_needs_indent || comment_has_trailing_code)
+                && (within_file_lines_range
+                    || block_comment_is_selected
+                    || comment_needs_indent
+                    || comment_has_trailing_code)
             {
-                if comment_needs_indent || comment_has_trailing_code {
+                if comment_needs_indent || comment_has_trailing_code || block_comment_is_selected {
                     // The preceding unselected slice may already have emitted indentation.
                     self.buffer
                         .truncate(self.buffer.trim_end_matches([' ', '\t']).len());
