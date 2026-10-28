@@ -57,12 +57,12 @@ impl<'a> FmtVisitor<'a> {
         self.format_missing_indent(end, true, false)
     }
 
-    pub(crate) fn format_missing_no_indent(&mut self, end: BytePos) {
-        self.format_missing_indent(end, false, false)
-    }
-
     pub(crate) fn format_missing_with_forced_indent(&mut self, end: BytePos) {
         self.format_missing_indent(end, true, true)
+    }
+
+    pub(crate) fn format_missing_no_indent_forced(&mut self, end: BytePos) {
+        self.format_missing_indent(end, false, true)
     }
 
     fn format_missing_indent(&mut self, end: BytePos, should_indent: bool, force_indent: bool) {

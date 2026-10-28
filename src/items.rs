@@ -385,7 +385,7 @@ impl<'a> FmtVisitor<'a> {
                 }
             }
 
-            self.format_missing_no_indent(item.span.hi() - BytePos(1));
+            self.format_missing_no_indent_forced(item.span.hi() - BytePos(1));
             self.block_indent = self.block_indent.block_unindent(self.config);
             let indent_str = self.block_indent.to_string(self.config);
             self.push_str(&indent_str);

@@ -627,7 +627,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
                     self.visit_mac(mac, MacroPosition::Item);
                 }
                 ast::ItemKind::ForeignMod(ref foreign_mod) => {
-                    self.format_missing_with_indent(source!(self, item.span).lo());
+                    self.format_missing_with_forced_indent(source!(self, item.span).lo());
                     self.format_foreign_mod(foreign_mod, item.span);
                 }
                 ast::ItemKind::Static(..) | ast::ItemKind::Const(..) => {
