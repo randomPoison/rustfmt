@@ -212,7 +212,7 @@ impl<'a> FmtVisitor<'a> {
         for (kind, mut offset, mut subslice) in CommentCodeSlices::new(snippet) {
             debug!("{:?}: {:?}", kind, subslice);
 
-            let (lf_count, crlf_count, within_file_lines_range) =
+            let (lf_count, crlf_count, mut within_file_lines_range) =
                 slice_within_file_lines_range(self.config.file_lines(), status.cur_line, subslice);
             let newline_count = lf_count + crlf_count;
             let has_preceding_text_on_line = !big_snippet[..big_diff + offset]
@@ -223,7 +223,7 @@ impl<'a> FmtVisitor<'a> {
                 .is_empty();
 
             // A trailing line comment can be grouped with standalone comments below it.
-            // Preserve that first line separately so it does not hide their indentation.
+            // Handle that first line separately so it does not hide their indentation.
             //
             // Example:
             //
@@ -241,20 +241,42 @@ impl<'a> FmtVisitor<'a> {
                 && has_preceding_text_on_line
             {
                 if let Some(end) = subslice.find('\n').map(|i| i + 1) {
-                    self.process_missing_code(
-                        &mut status,
-                        snippet,
-                        &subslice[..end],
-                        offset,
-                        file_name,
-                        false,
-                    );
+                    if self
+                        .config
+                        .file_lines()
+                        .contains_line(file_name, status.cur_line)
+                    {
+                        // The preceding whitespace was trimmed on this selected line.
+                        // Use normal comment formatting to restore its separator.
+                        self.process_comment(
+                            &mut status,
+                            snippet,
+                            &big_snippet[..big_diff + offset],
+                            offset,
+                            &subslice[..end],
+                        );
+                    } else {
+                        self.process_missing_code(
+                            &mut status,
+                            snippet,
+                            &subslice[..end],
+                            offset,
+                            file_name,
+                            false,
+                        );
+                    }
                     let rest = subslice[end..].trim_start_matches([' ', '\t']);
                     offset += subslice.len() - rest.len();
                     subslice = rest;
                     if subslice.is_empty() {
                         continue;
                     }
+                    within_file_lines_range = slice_within_file_lines_range(
+                        self.config.file_lines(),
+                        status.cur_line,
+                        subslice,
+                    )
+                    .2;
                 }
             }
 
