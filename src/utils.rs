@@ -443,7 +443,10 @@ macro_rules! skip_out_of_file_lines_range_err {
 
 macro_rules! skip_out_of_file_lines_range_visitor {
     ($self:ident, $span:expr) => {
-        if $self.can_preserve_unselected($span) {
+        skip_out_of_file_lines_range_visitor!($self, $span, &[]);
+    };
+    ($self:ident, $span:expr, $attrs:expr) => {
+        if $self.can_preserve_outer_attrs($attrs) && $self.can_preserve_unselected($span) {
             $self.push_rewrite($span, None);
             return;
         }

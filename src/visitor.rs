@@ -190,10 +190,25 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         !out_of_file_lines_range!(self, span)
     }
 
+    // A node's span alone does not describe the placement of its attributes.
+    // In particular, attributes may share a line with each other or with code.
+    // Explicit skip preserves that internal layout along with the node's text.
+    fn can_preserve_outer_attrs(&self, attrs: &[ast::Attribute]) -> bool {
+        contains_skip(attrs)
+            || attrs
+                .iter()
+                .filter(|attr| attr.style == ast::AttrStyle::Outer)
+                .all(|attr| self.can_preserve_unselected(attr.span))
+    }
+
     fn visit_stmt(&mut self, stmt: &Stmt<'_>, include_empty_semi: bool) {
         debug!("visit_stmt: {}", self.psess.span_to_debug_info(stmt.span()));
 
-        skip_out_of_file_lines_range_visitor!(self, stmt.span());
+        skip_out_of_file_lines_range_visitor!(
+            self,
+            stmt.span(),
+            get_attrs_from_stmt(stmt.as_ast_node())
+        );
 
         if stmt.is_empty() {
             // If the statement is empty, just skip over it. Before that, make sure any comment
@@ -531,7 +546,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
     }
 
     pub(crate) fn visit_item(&mut self, item: &ast::Item) {
-        skip_out_of_file_lines_range_visitor!(self, item.span);
+        skip_out_of_file_lines_range_visitor!(self, item.span, &item.attrs);
 
         // This is where we bail out if there is a skip attribute. This is only
         // complex in the module case. It is complex because the module could be
@@ -755,7 +770,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         };
         // TODO(calebcartwright): Not sure the skip spans are correct
         let skip_span = ai.span;
-        skip_out_of_file_lines_range_visitor!(self, ai.span);
+        skip_out_of_file_lines_range_visitor!(self, ai.span, &ai.attrs);
 
         if self.visit_attrs(&ai.attrs, ast::AttrStyle::Outer) {
             self.push_skipped_with_span(ai.attrs.as_slice(), skip_span, skip_span);
@@ -892,7 +907,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         item_span: Span,
         main_span: Span,
     ) {
-        self.format_missing_with_indent(source!(self, item_span).lo());
+        self.format_missing_with_forced_indent(source!(self, item_span).lo());
         // do not take into account the lines with attributes as part of the skipped range
         let attrs_end = attrs
             .iter()
@@ -1005,7 +1020,10 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         }
 
         let span = mk_sp(attrs[0].span.lo(), attrs[attrs.len() - 1].span.hi());
-        if out_of_file_lines_range!(self, span) {
+        if attrs
+            .iter()
+            .all(|attr| self.can_preserve_unselected(attr.span))
+        {
             return false;
         }
 
