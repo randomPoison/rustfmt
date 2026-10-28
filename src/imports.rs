@@ -69,7 +69,7 @@ impl<'a> FmtVisitor<'a> {
                 self.last_pos = source!(self, span).hi();
             }
             Some(ref s) => {
-                self.format_missing_with_indent(source!(self, span).lo());
+                self.format_missing_with_forced_indent(source!(self, span).lo());
                 self.push_str(s);
                 self.last_pos = source!(self, span).hi();
             }
