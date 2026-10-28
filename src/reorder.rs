@@ -302,11 +302,13 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
             .count();
         let items = &items[..item_length];
 
-        let at_least_one_in_file_lines = items
+        // Reordering can move every item in the group, so preserve the group
+        // only when every item is eligible for preservation on its own.
+        let needs_rewrite = items
             .iter()
-            .any(|item| !out_of_file_lines_range!(self, item.span));
+            .any(|item| !self.can_preserve_unselected(item.span));
 
-        if at_least_one_in_file_lines && !items.is_empty() {
+        if needs_rewrite && !items.is_empty() {
             let lo = items.first().unwrap().span().lo();
             let hi = items.last().unwrap().span().hi();
             let span = mk_sp(lo, hi);
