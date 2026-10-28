@@ -620,7 +620,7 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
                     self.visit_enum(ident, &item.vis, def, generics, item.span);
                 }
                 ast::ItemKind::Mod(safety, ident, ref mod_kind) => {
-                    self.format_missing_with_indent(source!(self, item.span).lo());
+                    self.format_missing_with_forced_indent(source!(self, item.span).lo());
                     self.format_mod(mod_kind, safety, &item.vis, item.span, ident, attrs);
                 }
                 ast::ItemKind::MacCall(ref mac) => {
