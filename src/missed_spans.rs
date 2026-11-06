@@ -193,6 +193,13 @@ impl<'a> FmtVisitor<'a> {
         let file_name = &self.psess.span_to_filename(span);
         let mut status = SnippetStatus::new(line);
 
+        // A trailing comment shares the placement of the code already emitted.
+        // Even outside the selection, it cannot retain its original spacing and
+        // formatting when that code's final line has changed. Compare the actual
+        // output so this also covers indentation changes and direct item emission.
+        let preceding_line_changed =
+            big_snippet[..big_diff].rsplit('\n').next() != self.buffer.rsplit('\n').next();
+
         let snippet = &*transform_missing_snippet(self.config, old_snippet);
 
         let slice_within_file_lines_range =
@@ -215,6 +222,7 @@ impl<'a> FmtVisitor<'a> {
             let (lf_count, crlf_count, mut within_file_lines_range) =
                 slice_within_file_lines_range(self.config.file_lines(), status.cur_line, subslice);
             let newline_count = lf_count + crlf_count;
+            let mut follows_changed_code = preceding_line_changed && status.cur_line == line;
             let has_preceding_text_on_line = !big_snippet[..big_diff + offset]
                 .rsplit('\n')
                 .next()
@@ -241,12 +249,17 @@ impl<'a> FmtVisitor<'a> {
                 && has_preceding_text_on_line
             {
                 if let Some(end) = subslice.find('\n').map(|i| i + 1) {
-                    if self
-                        .config
-                        .file_lines()
-                        .contains_line(file_name, status.cur_line)
+                    if follows_changed_code
+                        || self
+                            .config
+                            .file_lines()
+                            .contains_line(file_name, status.cur_line)
                     {
-                        // The preceding whitespace was trimmed on this selected line.
+                        if follows_changed_code {
+                            self.buffer
+                                .truncate(self.buffer.trim_end_matches([' ', '\t']).len());
+                        }
+                        // The line was selected or its preceding code changed.
                         // Use normal comment formatting to restore its separator.
                         self.process_comment(
                             &mut status,
@@ -268,6 +281,7 @@ impl<'a> FmtVisitor<'a> {
                     let rest = subslice[end..].trim_start_matches([' ', '\t']);
                     offset += subslice.len() - rest.len();
                     subslice = rest;
+                    follows_changed_code = false;
                     if subslice.is_empty() {
                         continue;
                     }
@@ -323,11 +337,16 @@ impl<'a> FmtVisitor<'a> {
 
             if CodeCharKind::Comment == kind
                 && (within_file_lines_range
+                    || follows_changed_code
                     || block_comment_is_selected
                     || comment_needs_indent
                     || comment_has_trailing_code)
             {
-                if comment_needs_indent || comment_has_trailing_code || block_comment_is_selected {
+                if follows_changed_code
+                    || comment_needs_indent
+                    || comment_has_trailing_code
+                    || block_comment_is_selected
+                {
                     // The preceding unselected slice may already have emitted indentation.
                     self.buffer
                         .truncate(self.buffer.trim_end_matches([' ', '\t']).len());
