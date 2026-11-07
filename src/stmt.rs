@@ -71,6 +71,10 @@ impl<'a> Stmt<'a> {
         matches!(self.inner.kind, ast::StmtKind::Empty)
     }
 
+    pub(crate) fn is_last(&self) -> bool {
+        self.is_last
+    }
+
     fn is_last_expr(&self) -> bool {
         if !self.is_last {
             return false;

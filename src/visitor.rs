@@ -273,6 +273,12 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
             }
             ast::StmtKind::Empty => (),
         }
+
+        // Preserve the absence of a semicolon along with an unselected statement.
+        // Apply the block-tail policy only after the preservation shortcut above.
+        if stmt.is_last() && self.add_semi_on_last_block_stmt(stmt.as_ast_node()) {
+            self.push_str(";");
+        }
     }
 
     /// Remove spaces between the opening brace and the first statement or the inner attribute
@@ -325,12 +331,6 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         }
 
         self.walk_block_stmts(b);
-
-        if let Some(stmt) = b.stmts.last() {
-            if self.add_semi_on_last_block_stmt(stmt) {
-                self.push_str(";");
-            }
-        }
 
         // Ignore the closing brace.
         let missing_span = self.next_span(b.span.hi() - brace_compensation);
