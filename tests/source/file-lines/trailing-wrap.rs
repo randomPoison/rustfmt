@@ -1,6 +1,6 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/trailing-wrap.rs","range":[6,6]},{"file":"tests/source/file-lines/trailing-wrap.rs","range":[17,17]},{"file":"tests/source/file-lines/trailing-wrap.rs","range":[19,19]}]
-// rustfmt-wrap_comments: true
-// rustfmt-comment_width: 40
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/trailing-wrap.rs","range":[6,6]},{"file":"tests/source/file-lines/trailing-wrap.rs","range":[17,17]},{"file":"tests/source/file-lines/trailing-wrap.rs","range":[19,19]}]
+//@ rustfmt-wrap_comments: true
+//@ rustfmt-comment_width: 40
 
 fn main() {
     let selected=0;

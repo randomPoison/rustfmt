@@ -1,6 +1,6 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/closing-brace-if-else-2024.rs","range":[7,7]},{"file":"tests/source/file-lines/closing-brace-if-else-2024.rs","range":[13,13]},{"file":"tests/source/file-lines/closing-brace-if-else-2024.rs","range":[19,19]},{"file":"tests/source/file-lines/closing-brace-if-else-2024.rs","range":[25,25]},{"file":"tests/source/file-lines/closing-brace-if-else-2024.rs","range":[33,33]},{"file":"tests/source/file-lines/closing-brace-if-else-2024.rs","range":[39,39]}]
-// rustfmt-style_edition: 2024
-// rustfmt-normalize_comments: true
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/closing-brace-if-else-2024.rs","range":[7,7]},{"file":"tests/source/file-lines/closing-brace-if-else-2024.rs","range":[13,13]},{"file":"tests/source/file-lines/closing-brace-if-else-2024.rs","range":[19,19]},{"file":"tests/source/file-lines/closing-brace-if-else-2024.rs","range":[25,25]},{"file":"tests/source/file-lines/closing-brace-if-else-2024.rs","range":[33,33]},{"file":"tests/source/file-lines/closing-brace-if-else-2024.rs","range":[39,39]}]
+//@ rustfmt-style_edition: 2024
+//@ rustfmt-normalize_comments: true
 
 fn main() {
     let repaired = if true {

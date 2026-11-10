@@ -1,5 +1,5 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/trailing-selected-normalize.rs","range":[6,6]},{"file":"tests/source/file-lines/trailing-selected-normalize.rs","range":[8,8]},{"file":"tests/source/file-lines/trailing-selected-normalize.rs","range":[10,10]},{"file":"tests/source/file-lines/trailing-selected-normalize.rs","range":[14,14]}]
-// rustfmt-normalize_comments: true
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/trailing-selected-normalize.rs","range":[6,6]},{"file":"tests/source/file-lines/trailing-selected-normalize.rs","range":[8,8]},{"file":"tests/source/file-lines/trailing-selected-normalize.rs","range":[10,10]},{"file":"tests/source/file-lines/trailing-selected-normalize.rs","range":[14,14]}]
+//@ rustfmt-normalize_comments: true
 
 fn main() {
     let x=1;    /* trailing block

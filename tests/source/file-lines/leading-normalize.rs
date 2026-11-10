@@ -1,5 +1,5 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/leading-normalize.rs","range":[5,5]}]
-// rustfmt-normalize_comments: true
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/leading-normalize.rs","range":[5,5]}]
+//@ rustfmt-normalize_comments: true
 
 fn main() {
     let selected=0;

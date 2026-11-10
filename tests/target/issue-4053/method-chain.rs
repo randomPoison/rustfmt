@@ -1,4 +1,4 @@
-// rustfmt-file_lines: [{"file":"tests/source/issue-4053/method-chain.rs","range":[5,5]}]
+//@ rustfmt-file_lines: [{"file":"tests/source/issue-4053/method-chain.rs","range":[5,5]}]
 
 fn main() {
     let diff = repo

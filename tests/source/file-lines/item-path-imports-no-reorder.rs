@@ -1,6 +1,6 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/item-path-imports-no-reorder.rs","range":[7,7]},{"file":"tests/source/file-lines/item-path-imports-no-reorder.rs","range":[13,13]},{"file":"tests/source/file-lines/item-path-imports-no-reorder.rs","range":[19,19]},{"file":"tests/source/file-lines/item-path-imports-no-reorder.rs","range":[25,25]},{"file":"tests/source/file-lines/item-path-imports-no-reorder.rs","range":[31,31]}]
-// rustfmt-edition: 2021
-// rustfmt-reorder_imports: false
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/item-path-imports-no-reorder.rs","range":[7,7]},{"file":"tests/source/file-lines/item-path-imports-no-reorder.rs","range":[13,13]},{"file":"tests/source/file-lines/item-path-imports-no-reorder.rs","range":[19,19]},{"file":"tests/source/file-lines/item-path-imports-no-reorder.rs","range":[25,25]},{"file":"tests/source/file-lines/item-path-imports-no-reorder.rs","range":[31,31]}]
+//@ rustfmt-edition: 2021
+//@ rustfmt-reorder_imports: false
 
 // An unselected import with incorrect indentation must be rewritten.
 fn import_indent() {

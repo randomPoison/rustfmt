@@ -1,4 +1,4 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/comment-indent.rs","range":[3,3]}]
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/comment-indent.rs","range":[3,3]}]
 
 fn main() {
     // Reindent before a preserved statement.

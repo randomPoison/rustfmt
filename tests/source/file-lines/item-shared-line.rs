@@ -1,4 +1,4 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/item-shared-line.rs","range":[4,4]}]
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/item-shared-line.rs","range":[4,4]}]
 
 mod cases {
     const SELECTED:i32=0;

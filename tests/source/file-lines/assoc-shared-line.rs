@@ -1,4 +1,4 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/assoc-shared-line.rs","range":[4,4]}]
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/assoc-shared-line.rs","range":[4,4]}]
 
 impl Example {
     const SELECTED:i32=0;

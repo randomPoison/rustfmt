@@ -1,6 +1,6 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/item-path-modules.rs","range":[7,7]},{"file":"tests/source/file-lines/item-path-modules.rs","range":[13,13]},{"file":"tests/source/file-lines/item-path-modules.rs","range":[19,19]},{"file":"tests/source/file-lines/item-path-modules.rs","range":[25,25]},{"file":"tests/source/file-lines/item-path-modules.rs","range":[31,31]},{"file":"tests/source/file-lines/item-path-modules.rs","range":[37,37]},{"file":"tests/source/file-lines/item-path-modules.rs","range":[45,45]}]
-// rustfmt-edition: 2021
-// rustfmt-style_edition: 2024
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/item-path-modules.rs","range":[7,7]},{"file":"tests/source/file-lines/item-path-modules.rs","range":[13,13]},{"file":"tests/source/file-lines/item-path-modules.rs","range":[19,19]},{"file":"tests/source/file-lines/item-path-modules.rs","range":[25,25]},{"file":"tests/source/file-lines/item-path-modules.rs","range":[31,31]},{"file":"tests/source/file-lines/item-path-modules.rs","range":[37,37]},{"file":"tests/source/file-lines/item-path-modules.rs","range":[45,45]}]
+//@ rustfmt-edition: 2021
+//@ rustfmt-style_edition: 2024
 
 // An unselected module with incorrect indentation must be rewritten.
 fn module_indent() {

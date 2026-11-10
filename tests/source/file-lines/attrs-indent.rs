@@ -1,6 +1,6 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/attrs-indent.rs","range":[7,7]},{"file":"tests/source/file-lines/attrs-indent.rs","range":[14,14]},{"file":"tests/source/file-lines/attrs-indent.rs","range":[22,22]},{"file":"tests/source/file-lines/attrs-indent.rs","range":[32,32]},{"file":"tests/source/file-lines/attrs-indent.rs","range":[40,40]}]
-// rustfmt-edition: 2021
-// rustfmt-style_edition: 2024
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/attrs-indent.rs","range":[7,7]},{"file":"tests/source/file-lines/attrs-indent.rs","range":[14,14]},{"file":"tests/source/file-lines/attrs-indent.rs","range":[22,22]},{"file":"tests/source/file-lines/attrs-indent.rs","range":[32,32]},{"file":"tests/source/file-lines/attrs-indent.rs","range":[40,40]}]
+//@ rustfmt-edition: 2021
+//@ rustfmt-style_edition: 2024
 
 // Unselected outer attributes must move with their containing item.
 fn outer_attribute() {

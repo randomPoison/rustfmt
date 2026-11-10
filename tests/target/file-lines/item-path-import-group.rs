@@ -1,6 +1,6 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/item-path-import-group.rs","range":[7,7]},{"file":"tests/source/file-lines/item-path-import-group.rs","range":[15,15]},{"file":"tests/source/file-lines/item-path-import-group.rs","range":[23,23]}]
-// rustfmt-edition: 2021
-// rustfmt-reorder_imports: true
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/item-path-import-group.rs","range":[7,7]},{"file":"tests/source/file-lines/item-path-import-group.rs","range":[15,15]},{"file":"tests/source/file-lines/item-path-import-group.rs","range":[23,23]}]
+//@ rustfmt-edition: 2021
+//@ rustfmt-reorder_imports: true
 
 // Only the middle import has incorrect indentation; rewrite and sort all three.
 fn group_indent() {

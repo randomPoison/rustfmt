@@ -1,6 +1,6 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/item-path-foreign.rs","range":[7,7]},{"file":"tests/source/file-lines/item-path-foreign.rs","range":[13,13]},{"file":"tests/source/file-lines/item-path-foreign.rs","range":[19,19]},{"file":"tests/source/file-lines/item-path-foreign.rs","range":[25,25]},{"file":"tests/source/file-lines/item-path-foreign.rs","range":[31,31]}]
-// rustfmt-edition: 2021
-// rustfmt-style_edition: 2024
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/item-path-foreign.rs","range":[7,7]},{"file":"tests/source/file-lines/item-path-foreign.rs","range":[13,13]},{"file":"tests/source/file-lines/item-path-foreign.rs","range":[19,19]},{"file":"tests/source/file-lines/item-path-foreign.rs","range":[25,25]},{"file":"tests/source/file-lines/item-path-foreign.rs","range":[31,31]}]
+//@ rustfmt-edition: 2021
+//@ rustfmt-style_edition: 2024
 
 // An unselected foreign block with incorrect indentation must be rewritten.
 fn foreign_indent() {

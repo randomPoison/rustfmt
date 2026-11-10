@@ -1,7 +1,7 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[8,8]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[14,14]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[21,21]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[29,29]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[36,36]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[42,42]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[48,48]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[53,53]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[59,59]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[65,65]}]
-// rustfmt-edition: 2024
-// rustfmt-style_edition: 2027
-// rustfmt-trailing_semicolon: true
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[8,8]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[14,14]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[21,21]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[29,29]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[36,36]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[42,42]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[48,48]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[53,53]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[59,59]},{"file":"tests/source/file-lines/tail-semicolon-2027.rs","range":[65,65]}]
+//@ rustfmt-edition: 2024
+//@ rustfmt-style_edition: 2027
+//@ rustfmt-trailing_semicolon: true
 
 // Preserve unselected tail statements, including their missing punctuation.
 fn returns() {

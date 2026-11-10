@@ -1,6 +1,6 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/attrs-preserved.rs","range":[7,7]},{"file":"tests/source/file-lines/attrs-preserved.rs","range":[14,14]},{"file":"tests/source/file-lines/attrs-preserved.rs","range":[23,23]},{"file":"tests/source/file-lines/attrs-preserved.rs","range":[28,28]}]
-// rustfmt-edition: 2021
-// rustfmt-style_edition: 2024
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/attrs-preserved.rs","range":[7,7]},{"file":"tests/source/file-lines/attrs-preserved.rs","range":[14,14]},{"file":"tests/source/file-lines/attrs-preserved.rs","range":[23,23]},{"file":"tests/source/file-lines/attrs-preserved.rs","range":[28,28]}]
+//@ rustfmt-edition: 2021
+//@ rustfmt-style_edition: 2024
 
 // Control: preserve unselected attributes and items at the correct indentation.
 fn preserved_outer() {

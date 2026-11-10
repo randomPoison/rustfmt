@@ -1,4 +1,4 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/stmt-shared-final-line.rs","range":[4,4]}]
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/stmt-shared-final-line.rs","range":[4,4]}]
 
 fn main() {
     let selected = 0;

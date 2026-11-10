@@ -1,4 +1,4 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/stmt-indent-preserved.rs","range":[8,8]}]
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/stmt-indent-preserved.rs","range":[8,8]}]
 
 fn do_match(arg: Option<i32>) {
     // Preserve unselected statements only when their indentation is correct.

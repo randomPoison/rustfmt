@@ -1,6 +1,6 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/trailing-normalize-2024.rs","range":[6,6]}]
-// rustfmt-normalize_comments: true
-// rustfmt-style_edition: 2024
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/trailing-normalize-2024.rs","range":[6,6]}]
+//@ rustfmt-normalize_comments: true
+//@ rustfmt-style_edition: 2024
 
 fn main() {
     let selected=0;

@@ -1,4 +1,4 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/leading-comment.rs","range":[4,4]}]
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/leading-comment.rs","range":[4,4]}]
 
 fn main() {
     let selected = 0;

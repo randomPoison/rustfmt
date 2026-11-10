@@ -1,6 +1,6 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/attrs-shared-line.rs","range":[7,7]},{"file":"tests/source/file-lines/attrs-shared-line.rs","range":[13,13]},{"file":"tests/source/file-lines/attrs-shared-line.rs","range":[20,20]},{"file":"tests/source/file-lines/attrs-shared-line.rs","range":[26,26]}]
-// rustfmt-edition: 2021
-// rustfmt-style_edition: 2024
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/attrs-shared-line.rs","range":[7,7]},{"file":"tests/source/file-lines/attrs-shared-line.rs","range":[13,13]},{"file":"tests/source/file-lines/attrs-shared-line.rs","range":[20,20]},{"file":"tests/source/file-lines/attrs-shared-line.rs","range":[26,26]}]
+//@ rustfmt-edition: 2021
+//@ rustfmt-style_edition: 2024
 
 // An attribute and its item must be separated even when both are unselected.
 fn attribute_and_item() {

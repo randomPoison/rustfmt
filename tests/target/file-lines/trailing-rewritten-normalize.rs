@@ -1,7 +1,7 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/trailing-rewritten-normalize.rs","range":[8,8]},{"file":"tests/source/file-lines/trailing-rewritten-normalize.rs","range":[15,15]},{"file":"tests/source/file-lines/trailing-rewritten-normalize.rs","range":[22,22]},{"file":"tests/source/file-lines/trailing-rewritten-normalize.rs","range":[30,30]}]
-// rustfmt-edition: 2021
-// rustfmt-style_edition: 2024
-// rustfmt-normalize_comments: true
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/trailing-rewritten-normalize.rs","range":[8,8]},{"file":"tests/source/file-lines/trailing-rewritten-normalize.rs","range":[15,15]},{"file":"tests/source/file-lines/trailing-rewritten-normalize.rs","range":[22,22]},{"file":"tests/source/file-lines/trailing-rewritten-normalize.rs","range":[30,30]}]
+//@ rustfmt-edition: 2021
+//@ rustfmt-style_edition: 2024
+//@ rustfmt-normalize_comments: true
 
 // Reindenting an unselected statement also invalidates its trailing comment.
 fn changed_indent() {

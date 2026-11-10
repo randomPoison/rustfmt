@@ -1,6 +1,6 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/foreign-closing-brace-2024.rs","range":[7,7]},{"file":"tests/source/file-lines/foreign-closing-brace-2024.rs","range":[15,15]},{"file":"tests/source/file-lines/foreign-closing-brace-2024.rs","range":[23,23]},{"file":"tests/source/file-lines/foreign-closing-brace-2024.rs","range":[28,28]},{"file":"tests/source/file-lines/foreign-closing-brace-2024.rs","range":[37,37]},{"file":"tests/source/file-lines/foreign-closing-brace-2024.rs","range":[45,45]},{"file":"tests/source/file-lines/foreign-closing-brace-2024.rs","range":[51,51]}]
-// rustfmt-edition: 2021
-// rustfmt-style_edition: 2024
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/foreign-closing-brace-2024.rs","range":[7,7]},{"file":"tests/source/file-lines/foreign-closing-brace-2024.rs","range":[15,15]},{"file":"tests/source/file-lines/foreign-closing-brace-2024.rs","range":[23,23]},{"file":"tests/source/file-lines/foreign-closing-brace-2024.rs","range":[28,28]},{"file":"tests/source/file-lines/foreign-closing-brace-2024.rs","range":[37,37]},{"file":"tests/source/file-lines/foreign-closing-brace-2024.rs","range":[45,45]},{"file":"tests/source/file-lines/foreign-closing-brace-2024.rs","range":[51,51]}]
+//@ rustfmt-edition: 2021
+//@ rustfmt-style_edition: 2024
 
 // Selecting only the header must leave the canonical closing brace unchanged.
 fn selected_header() {

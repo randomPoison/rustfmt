@@ -1,4 +1,4 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/trailing-selected.rs","range":[5,5]},{"file":"tests/source/file-lines/trailing-selected.rs","range":[7,7]},{"file":"tests/source/file-lines/trailing-selected.rs","range":[9,9]},{"file":"tests/source/file-lines/trailing-selected.rs","range":[13,13]}]
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/trailing-selected.rs","range":[5,5]},{"file":"tests/source/file-lines/trailing-selected.rs","range":[7,7]},{"file":"tests/source/file-lines/trailing-selected.rs","range":[9,9]},{"file":"tests/source/file-lines/trailing-selected.rs","range":[13,13]}]
 
 fn main() {
     let x=1;    /* trailing block

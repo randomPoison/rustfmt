@@ -1,8 +1,8 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/trailing-rewritten-wrap-2024.rs","range":[9,9]},{"file":"tests/source/file-lines/trailing-rewritten-wrap-2024.rs","range":[16,16]},{"file":"tests/source/file-lines/trailing-rewritten-wrap-2024.rs","range":[23,23]},{"file":"tests/source/file-lines/trailing-rewritten-wrap-2024.rs","range":[31,31]}]
-// rustfmt-edition: 2021
-// rustfmt-style_edition: 2024
-// rustfmt-wrap_comments: true
-// rustfmt-comment_width: 40
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/trailing-rewritten-wrap-2024.rs","range":[9,9]},{"file":"tests/source/file-lines/trailing-rewritten-wrap-2024.rs","range":[16,16]},{"file":"tests/source/file-lines/trailing-rewritten-wrap-2024.rs","range":[23,23]},{"file":"tests/source/file-lines/trailing-rewritten-wrap-2024.rs","range":[31,31]}]
+//@ rustfmt-edition: 2021
+//@ rustfmt-style_edition: 2024
+//@ rustfmt-wrap_comments: true
+//@ rustfmt-comment_width: 40
 
 // Reindenting the statement requires normal wrapping of its block comment.
 fn changed_indent() {

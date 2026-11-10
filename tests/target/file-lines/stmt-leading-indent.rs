@@ -1,4 +1,4 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/stmt-leading-indent.rs","range":[3,3]}]
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/stmt-leading-indent.rs","range":[3,3]}]
 
 fn main() {
     let x = 1;

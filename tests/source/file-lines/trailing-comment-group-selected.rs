@@ -1,6 +1,6 @@
-// rustfmt-file_lines: [{"file":"tests/source/file-lines/trailing-comment-group-selected.rs","range":[8,8]},{"file":"tests/source/file-lines/trailing-comment-group-selected.rs","range":[16,17]},{"file":"tests/source/file-lines/trailing-comment-group-selected.rs","range":[25,26]},{"file":"tests/source/file-lines/trailing-comment-group-selected.rs","range":[34,34]},{"file":"tests/source/file-lines/trailing-comment-group-selected.rs","range":[41,41]}]
-// rustfmt-edition: 2021
-// rustfmt-style_edition: 2024
+//@ rustfmt-file_lines: [{"file":"tests/source/file-lines/trailing-comment-group-selected.rs","range":[8,8]},{"file":"tests/source/file-lines/trailing-comment-group-selected.rs","range":[16,17]},{"file":"tests/source/file-lines/trailing-comment-group-selected.rs","range":[25,26]},{"file":"tests/source/file-lines/trailing-comment-group-selected.rs","range":[34,34]},{"file":"tests/source/file-lines/trailing-comment-group-selected.rs","range":[41,41]}]
+//@ rustfmt-edition: 2021
+//@ rustfmt-style_edition: 2024
 
 // Selecting the trailing comment must retain its separator from the statement.
 fn selected_first_line() {
