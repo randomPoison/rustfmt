@@ -24,8 +24,8 @@ fn main() {
     let grouped = if true {
         1;
         2;    // Preserve this trailing comment's spacing.
-    // Rewrite this correctly indented comment with the misindented line below.
-    // Reindent this later comment in the same group.
+    //Preserve this unnormalized continuation of the trailing comment.
+  // Preserve this misindented continuation too.
     } else {
         0
     };
@@ -38,7 +38,7 @@ fn main() {
     let preserved_trailing = if true {
         1;
         2    //Trailing comment on an unselected line.
-    //Preserve this correctly indented group in both editions.
+    //Preserve this unselected group as written.
     } else {
         0
     };

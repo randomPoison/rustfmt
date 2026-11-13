@@ -3,6 +3,6 @@
 
 fn main() {
     let selected=0;
-    let untouched = 1; // Trailing comment grouped with the standalone comment below.
-    // Preserve this standalone comment's indentation.
+    let untouched=1; // Trailing comment grouped with the continuation below.
+        // Preserve this misaligned continuation as written.
   }
