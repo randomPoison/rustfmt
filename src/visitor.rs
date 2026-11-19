@@ -9,7 +9,7 @@ use tracing::debug;
 use crate::attr::*;
 use crate::comment::{
     CharClasses, CodeCharKind, CommentCodeSlices, contains_comment, recover_comment_removed,
-    rewrite_comment,
+    rewrite_comment, split_trailing_comment,
 };
 use crate::config::{BraceStyle, Config, MacroSelector, StyleEdition};
 use crate::coverage::transform_missing_snippet;
@@ -89,18 +89,20 @@ impl SnippetProvider {
             && last_line_width(line_prefix, config.tab_spaces()) == indent.width()
     }
 
-    /// Whether the rest of this physical line contains only whitespace and comments.
-    /// Code after a multiline comment's first newline belongs to a different line.
-    pub(crate) fn has_no_trailing_code(&self, pos: BytePos) -> bool {
+    /// Whether the rest of this physical line contains code, i.e. anything other
+    /// than whitespace and comments. Code after a multiline comment's first newline
+    /// belongs to a different line. A position outside the snippet is treated as
+    /// having trailing code.
+    pub(crate) fn has_trailing_code(&self, pos: BytePos) -> bool {
         let Some(offset) = pos.to_usize().checked_sub(self.start_pos) else {
-            return false;
+            return true;
         };
         let Some(suffix) = self.big_snippet.get(offset..) else {
-            return false;
+            return true;
         };
         CharClasses::new(suffix.chars())
             .take_while(|(_, c)| *c != '\n')
-            .all(|(kind, c)| kind.is_comment() || c.is_whitespace())
+            .any(|(kind, c)| !kind.is_comment() && !c.is_whitespace())
     }
 }
 
@@ -157,23 +159,30 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
                 self.shape().indent,
                 self.config,
             )
-            && self
+            && !self
                 .snippet_provider
-                .has_no_trailing_code(source!(self, span).hi())
+                .has_trailing_code(source!(self, span).hi())
             && self.can_preserve_trailing_comments(source!(self, span).hi())
     }
 
-    /// A block comment can start on an unselected node's final line but extend
-    /// into selected lines. Rewriting it also requires rewriting that node.
+    /// A trailing comment can start on an unselected node's final line but extend
+    /// into selected lines. This applies to multi-line block comments, and to line
+    /// comment groups that stay attached to the code (see [`split_trailing_comment`]).
+    /// The attached comment is rewritten as a unit with the node, so rewriting it
+    /// also requires rewriting that node.
     fn can_preserve_trailing_comments(&self, pos: BytePos) -> bool {
         let suffix = self.snippet(mk_sp(pos, self.snippet_provider.end_pos()));
         for (kind, offset, slice) in CommentCodeSlices::new(suffix) {
-            if kind == CodeCharKind::Comment && slice.starts_with("/*") {
+            if kind == CodeCharKind::Comment {
                 let start = pos + BytePos::from_usize(offset);
-                if self.block_comment_is_selected(start, slice)
-                    || !self
+                let (attached, _) = split_trailing_comment(slice, self.config.style_edition());
+                if self.comment_is_selected(start, attached) {
+                    return false;
+                }
+                if slice.starts_with("/*")
+                    && self
                         .snippet_provider
-                        .has_no_trailing_code(start + BytePos::from_usize(slice.len()))
+                        .has_trailing_code(start + BytePos::from_usize(slice.len()))
                 {
                     return false;
                 }
@@ -185,7 +194,8 @@ impl<'b, 'a: 'b> FmtVisitor<'a> {
         true
     }
 
-    pub(crate) fn block_comment_is_selected(&self, start: BytePos, comment: &str) -> bool {
+    /// Whether any line of `comment`, which starts at `start`, is selected.
+    pub(crate) fn comment_is_selected(&self, start: BytePos, comment: &str) -> bool {
         let span = mk_sp(start, start + BytePos::from_usize(comment.len() - 1));
         !out_of_file_lines_range!(self, span)
     }

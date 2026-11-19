@@ -1,7 +1,9 @@
 use rustc_span::{BytePos, Pos, Span};
 use tracing::debug;
 
-use crate::comment::{CodeCharKind, CommentCodeSlices, is_last_comment_block, rewrite_comment};
+use crate::comment::{
+    CodeCharKind, CommentCodeSlices, is_last_comment_block, rewrite_comment, split_trailing_comment,
+};
 use crate::config::FileName;
 use crate::config::StyleEdition;
 use crate::config::file_lines::FileLines;
@@ -230,68 +232,64 @@ impl<'a> FmtVisitor<'a> {
                 .trim()
                 .is_empty();
 
-            // A trailing line comment can be grouped with standalone comments below it.
-            // Handle that first line separately so it does not hide their indentation.
-            //
-            // Example:
+            // Handle splitting trailing comments with edition-specific rules.
+            // `CommentCodeSlices` returns these comments as a single slice:
             //
             // ```
-            //     foo(); // trailing
-            //  // comment at incorrect indentation
+            //  foo(); // first line
+            //  // continuation line
+            //  // continuation line
             // ```
             //
-            // `CommentCodeSlices` groups these two comments into a single slice, when we
-            // need to treat them as separate for the purpose of line selection and
-            // unselected comment preservation.
+            // Before SE 2024 these are treated as a single comment group and the
+            // continuation lines are given visual alignment, but starting in SE 2024
+            // the first line is split off from the continuation lines and the
+            // continuation lines are given block indentation. Handle that splitting
+            // here in an edition-aware way.
             if kind == CodeCharKind::Comment
                 && !within_file_lines_range
                 && subslice.starts_with("//")
                 && has_preceding_text_on_line
             {
-                if let Some(end) = subslice.find('\n').map(|i| i + 1) {
-                    if follows_changed_code
-                        || self
-                            .config
-                            .file_lines()
-                            .contains_line(file_name, status.cur_line)
-                    {
-                        if follows_changed_code {
-                            self.buffer
-                                .truncate(self.buffer.trim_end_matches([' ', '\t']).len());
-                        }
-                        // The line was selected or its preceding code changed.
-                        // Use normal comment formatting to restore its separator.
-                        self.process_comment(
-                            &mut status,
-                            snippet,
-                            &big_snippet[..big_diff + offset],
-                            offset,
-                            &subslice[..end],
-                        );
-                    } else {
-                        self.process_missing_code(
-                            &mut status,
-                            snippet,
-                            &subslice[..end],
-                            offset,
-                            file_name,
-                            false,
-                        );
-                    }
-                    let rest = subslice[end..].trim_start_matches([' ', '\t']);
-                    offset += subslice.len() - rest.len();
-                    subslice = rest;
-                    follows_changed_code = false;
-                    if subslice.is_empty() {
-                        continue;
-                    }
-                    within_file_lines_range = slice_within_file_lines_range(
-                        self.config.file_lines(),
-                        status.cur_line,
-                        subslice,
-                    )
-                    .2;
+                let (attached, rest) =
+                    split_trailing_comment(subslice, self.config.style_edition());
+                if follows_changed_code
+                    || self.comment_is_selected(span.lo() + BytePos::from_usize(offset), attached)
+                {
+                    // Use normal comment formatting, which emits its own separator.
+                    // The preceding unselected slice may already have emitted one.
+                    self.buffer
+                        .truncate(self.buffer.trim_end_matches([' ', '\t']).len());
+                    self.process_comment(
+                        &mut status,
+                        snippet,
+                        &big_snippet[..big_diff + offset],
+                        offset,
+                        attached,
+                    );
+                } else {
+                    self.process_missing_code(
+                        &mut status,
+                        snippet,
+                        attached,
+                        offset,
+                        file_name,
+                        false,
+                    );
                 }
+                let rest = rest.trim_start_matches([' ', '\t']);
+                offset += subslice.len() - rest.len();
+                subslice = rest;
+                follows_changed_code = false;
+                if subslice.is_empty() {
+                    continue;
+                }
+                within_file_lines_range = slice_within_file_lines_range(
+                    self.config.file_lines(),
+                    status.cur_line,
+                    subslice,
+                )
+                .2;
             }
 
             let prefix = &big_snippet[..(offset + big_diff)];
@@ -324,16 +322,15 @@ impl<'a> FmtVisitor<'a> {
             // final line with following code.
             let comment_has_trailing_code = kind == CodeCharKind::Comment
                 && !subslice.ends_with('\n')
-                && !self
+                && self
                     .snippet_provider
-                    .has_no_trailing_code(span.lo() + BytePos::from_usize(offset + subslice.len()));
+                    .has_trailing_code(span.lo() + BytePos::from_usize(offset + subslice.len()));
 
             // A block comment is rewritten as a whole if any of its lines are
             // selected, including when its first line follows unselected code.
             let block_comment_is_selected = kind == CodeCharKind::Comment
                 && subslice.starts_with("/*")
-                && self
-                    .block_comment_is_selected(span.lo() + BytePos::from_usize(offset), subslice);
+                && self.comment_is_selected(span.lo() + BytePos::from_usize(offset), subslice);
 
             if CodeCharKind::Comment == kind
                 && (within_file_lines_range

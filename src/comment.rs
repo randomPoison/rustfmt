@@ -6,7 +6,7 @@ use itertools::{Itertools as _, MultiPeek, multipeek};
 use rustc_span::Span;
 use tracing::{debug, trace};
 
-use crate::config::Config;
+use crate::config::{Config, StyleEdition};
 use crate::rewrite::{RewriteContext, RewriteErrorExt, RewriteResult};
 use crate::shape::{Indent, Shape};
 use crate::string::{StringFormat, rewrite_string};
@@ -1752,6 +1752,42 @@ impl<'a> Iterator for CommentCodeSlices<'a> {
     }
 }
 
+/// Splits a trailing comment slice into the part attached to the preceding code
+/// and the part that forms a separate comment group.
+///
+/// `comment` is a comment slice from [`CommentCodeSlices`] that follows code on
+/// the same line. Consecutive `//` comments are grouped into one slice, even
+/// when only the first one trails the code:
+///
+/// ```text
+/// foo(); // trailing
+///        // continuation
+/// ```
+///
+/// Whether the later lines belong with the trailing comment depends on the
+/// style edition:
+///
+/// - Before 2024, the whole group stays with the code. The formatter aligns the
+///   later lines visually beneath the trailing comment.
+/// - In 2024 and later, only the first line stays with the code. The formatter
+///   places the later lines at block indentation, as a separate group.
+///
+/// Block comments always form their own slice, so they are never split.
+///
+/// The two parts are returned so that concatenating them gives back `comment`.
+/// The attached part includes its line ending. The separate part keeps its
+/// leading indentation and is empty if there is nothing to split off.
+pub(crate) fn split_trailing_comment(comment: &str, style_edition: StyleEdition) -> (&str, &str) {
+    if !comment.starts_with("//") || style_edition < StyleEdition::Edition2024 {
+        return (comment, "");
+    }
+
+    match comment.find('\n') {
+        Some(i) => comment.split_at(i + 1),
+        None => (comment, ""),
+    }
+}
+
 /// Checks is `new` didn't miss any comment from `span`, if it removed any, return previous text
 pub(crate) fn recover_comment_removed(
     new: String,
@@ -1913,6 +1949,51 @@ mod test {
         );
         assert_eq!((CodeCharKind::Normal, 18, " 1 + 1"), iter.next().unwrap());
         assert_eq!(None, iter.next());
+    }
+
+    #[test]
+    fn split_trailing_comment_group() {
+        // Check the shape of the slice `CommentCodeSlices` produces for a
+        // trailing group, since `split_trailing_comment` relies on it.
+        let input = " // tail\n           // more\n    baz();";
+
+        let mut iter = CommentCodeSlices::new(input);
+        assert_eq!((CodeCharKind::Normal, 0, " "), iter.next().unwrap());
+
+        let (kind, _, group) = iter.next().unwrap();
+        assert_eq!(CodeCharKind::Comment, kind);
+        assert_eq!("// tail\n           // more\n", group);
+
+        for edition in [
+            StyleEdition::Edition2015,
+            StyleEdition::Edition2018,
+            StyleEdition::Edition2021,
+        ] {
+            assert_eq!(split_trailing_comment(group, edition), (group, ""));
+        }
+        for edition in [StyleEdition::Edition2024, StyleEdition::Edition2027] {
+            assert_eq!(
+                split_trailing_comment(group, edition),
+                ("// tail\n", "           // more\n")
+            );
+        }
+    }
+
+    #[test]
+    fn split_trailing_comment_nothing_to_split() {
+        for edition in [StyleEdition::Edition2015, StyleEdition::Edition2024] {
+            // A single line comment, with and without a line ending.
+            assert_eq!(
+                split_trailing_comment("// tail\n", edition),
+                ("// tail\n", "")
+            );
+            assert_eq!(split_trailing_comment("// tail", edition), ("// tail", ""));
+            // Block comments are never split, even across lines.
+            assert_eq!(
+                split_trailing_comment("/* tail\n * more */", edition),
+                ("/* tail\n * more */", "")
+            );
+        }
     }
 
     #[test]
