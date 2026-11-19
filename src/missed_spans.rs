@@ -326,28 +326,25 @@ impl<'a> FmtVisitor<'a> {
                     .snippet_provider
                     .has_trailing_code(span.lo() + BytePos::from_usize(offset + subslice.len()));
 
-            // A block comment is rewritten as a whole if any of its lines are
-            // selected, including when its first line follows unselected code.
-            let block_comment_is_selected = kind == CodeCharKind::Comment
-                && subslice.starts_with("/*")
+            // A comment group is rewritten as a whole if any of its lines are
+            // selected. Rewriting can move text between the lines of a group (e.g.
+            // with `wrap_comments`), so rewriting only the selected lines would not
+            // match whole-file formatting. This also covers a block comment whose
+            // first line follows unselected code.
+            let comment_is_selected = kind == CodeCharKind::Comment
                 && self.comment_is_selected(span.lo() + BytePos::from_usize(offset), subslice);
 
             if CodeCharKind::Comment == kind
-                && (within_file_lines_range
+                && (comment_is_selected
                     || follows_changed_code
-                    || block_comment_is_selected
                     || comment_needs_indent
                     || comment_has_trailing_code)
             {
-                if follows_changed_code
-                    || comment_needs_indent
-                    || comment_has_trailing_code
-                    || block_comment_is_selected
-                {
-                    // The preceding unselected slice may already have emitted indentation.
-                    self.buffer
-                        .truncate(self.buffer.trim_end_matches([' ', '\t']).len());
-                }
+                // `process_comment` emits its own indentation or separator. An
+                // unselected line before the comment may already have emitted the
+                // original one.
+                self.buffer
+                    .truncate(self.buffer.trim_end_matches([' ', '\t']).len());
                 // 1: comment.
                 self.process_comment(&mut status, snippet, prefix, offset, subslice);
             } else if subslice.trim().is_empty() && newline_count > 0 && within_file_lines_range {
