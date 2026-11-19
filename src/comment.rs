@@ -1772,20 +1772,41 @@ impl<'a> Iterator for CommentCodeSlices<'a> {
 /// - In 2024 and later, only the first line stays with the code. The formatter
 ///   places the later lines at block indentation, as a separate group.
 ///
+/// In every edition, the attached part ends before the first doc comment
+/// (`///` or `/** */`). `CommentCodeSlices` can include a doc comment in the
+/// slice, but a doc comment is an attribute of the next node, so it always
+/// begins that node rather than continuing the trailing comment. Since only
+/// whitespace and ordinary comments can come between a node and the next one,
+/// this is the same boundary as the start of the next node.
+///
 /// Block comments always form their own slice, so they are never split.
 ///
 /// The two parts are returned so that concatenating them gives back `comment`.
-/// The attached part includes its line ending. The separate part keeps its
+/// The attached part includes its line ending. The second part keeps its
 /// leading indentation and is empty if there is nothing to split off.
 pub(crate) fn split_trailing_comment(comment: &str, style_edition: StyleEdition) -> (&str, &str) {
-    if !comment.starts_with("//") || style_edition < StyleEdition::Edition2024 {
+    if !comment.starts_with("//") {
         return (comment, "");
     }
 
-    match comment.find('\n') {
-        Some(i) => comment.split_at(i + 1),
-        None => (comment, ""),
-    }
+    // The first line is the trailing comment itself. Find the start of each
+    // later line.
+    let mut later_lines = comment.match_indices('\n').map(|(i, _)| i + 1);
+    let end = if style_edition >= StyleEdition::Edition2024 {
+        later_lines.next()
+    } else {
+        later_lines.find(|&i| starts_with_doc_comment(comment[i..].trim_start_matches([' ', '\t'])))
+    };
+    comment.split_at(end.unwrap_or(comment.len()))
+}
+
+/// Whether `s` starts with a doc comment, following the rules of the Rust
+/// lexer: `///` but not `////`, `//!`, `/**` but not `/***` or `/**/`, and `/*!`.
+fn starts_with_doc_comment(s: &str) -> bool {
+    (s.starts_with("///") && !s.starts_with("////"))
+        || s.starts_with("//!")
+        || (s.starts_with("/**") && !s.starts_with("/***") && !s.starts_with("/**/"))
+        || s.starts_with("/*!")
 }
 
 /// Checks is `new` didn't miss any comment from `span`, if it removed any, return previous text
@@ -1992,6 +2013,41 @@ mod test {
             assert_eq!(
                 split_trailing_comment("/* tail\n * more */", edition),
                 ("/* tail\n * more */", "")
+            );
+        }
+    }
+
+    #[test]
+    fn split_trailing_comment_doc_comment() {
+        // Check that `CommentCodeSlices` includes a following doc comment in the
+        // slice, since that is why `split_trailing_comment` must stop at it.
+        let input = " // a\n    /// doc\n    fn f() {}";
+        let (_, _, group) = CommentCodeSlices::new(input).nth(1).unwrap();
+        assert_eq!("// a\n    /// doc\n", group);
+
+        for edition in [StyleEdition::Edition2015, StyleEdition::Edition2024] {
+            assert_eq!(
+                split_trailing_comment(group, edition),
+                ("// a\n", "    /// doc\n")
+            );
+            assert_eq!(
+                split_trailing_comment("// a\n    /** doc */", edition),
+                ("// a\n", "    /** doc */")
+            );
+        }
+
+        // The group continues up to the doc comment.
+        assert_eq!(
+            split_trailing_comment("// a\n   // b\n   /// doc\n", StyleEdition::Edition2015),
+            ("// a\n   // b\n", "   /// doc\n")
+        );
+
+        // Comments that only look like doc comments do not end the group.
+        for not_doc in ["//// x\n", "/*** x */", "/**/"] {
+            let comment = format!("// a\n   {not_doc}");
+            assert_eq!(
+                split_trailing_comment(&comment, StyleEdition::Edition2015),
+                (comment.as_str(), "")
             );
         }
     }
